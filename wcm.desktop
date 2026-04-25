@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Wayfire Config Manager
+Comment=Configure Wayfire Compositor
+Exec=wcm
+Icon=wcm
+Terminal=false
+Categories=Settings;DesktopSettings;
