@@ -8,7 +8,7 @@ gi.require_version("Gtk", "4.0")
 gi.require_version("Gdk", "4.0")
 import sys, os, subprocess, glob, shutil, traceback
 from gi.repository import Gtk, Gdk, GLib, Gio, GdkPixbuf, Pango
-from config_backend import WayfireConfigFile
+from config_backend import WayfireConfigFile, PresetManager
 from metadata import (
     load_all_metadata,
     load_metadata_from_dir,
@@ -216,6 +216,18 @@ tooltip label {{ color: @text_primary; }}
 .filter-hidden {{ opacity: 0; transition: none !important; }}
 .theme-switch-box {{ padding: 6px 14px; border-radius: 10px; background-color: rgba({ab},0.03); border: 1px solid rgba({ab},0.06); }}
 .theme-switch-box label {{ font-size: 0.85em; color: @text_secondary; }}
+.preset-section {{ padding: 8px 14px; margin-top: 6px; }}
+.preset-section label {{ font-size: 0.85em; }}
+.preset-header {{ color: @amber; font-weight: 700; letter-spacing: 0.6px; font-size: 0.80em; margin-bottom: 4px; }}
+.preset-combo > button {{ background-color: @bg_input; border: 1px solid rgba({ab},0.10); border-radius: 8px; padding: 5px 10px; font-size: 0.9em; }}
+.preset-combo > button:hover {{ border-color: rgba({ab},0.32); }}
+.preset-btn-box button {{ padding: 4px 10px; font-size: 0.80em; min-height: 26px; border-radius: 8px; }}
+.preset-save {{ background-color: rgba({at},0.06); border: 1px solid rgba({at},0.16); color: @success; }}
+.preset-save:hover {{ background-color: rgba({at},0.14); border-color: rgba({at},0.45); }}
+.preset-load {{ background-color: rgba({ab},0.06); border: 1px solid rgba({ab},0.12); color: @amber_light; }}
+.preset-load:hover {{ background-color: rgba({ab},0.14); border-color: rgba({ab},0.38); }}
+.preset-delete {{ background-color: rgba({ar},0.04); border: 1px solid rgba({ar},0.10); color: @rose; }}
+.preset-delete:hover {{ background-color: rgba({ar},0.10); border-color: rgba({ar},0.40); }}
 """
 
 
@@ -565,6 +577,26 @@ def get_config_path():
     return p if os.path.isfile(p) else os.path.join(ch, "wayfire.ini")
 
 
+def get_wfshell_config_path():
+    """Get the wf-shell config file path (separate from wayfire.ini)."""
+    ov = os.environ.get("WF_SHELL_CONFIG_FILE")
+    if ov:
+        return os.path.expanduser(ov)
+    ch = os.environ.get("XDG_CONFIG_HOME", "") or os.path.join(
+        os.path.expanduser("~"), ".config"
+    )
+    # wf-shell looks in these locations
+    p = os.path.join(ch, "wf-shell.ini")
+    if os.path.isfile(p):
+        return p
+    p = os.path.join(ch, "wayfire", "wf-shell.ini")
+    if os.path.isfile(p):
+        return p
+    # Default — create alongside wayfire.ini
+    wf_path = get_config_path()
+    return os.path.join(os.path.dirname(wf_path), "wf-shell.ini")
+
+
 LABEL_W = 200
 
 
@@ -700,10 +732,7 @@ class OptionWidget(Gtk.Box):
                 s.ed = Gtk.Entry()
                 s.ed.set_text(cur if cur is not None else str(opt.default_value or ""))
                 s.ed.set_hexpand(True)
-                s.ed.connect("activate", lambda w: s._save(w.get_text()))
-                fc = Gtk.EventControllerFocus()
-                fc.connect("leave", lambda c: s._save(s.ed.get_text()))
-                s.ed.add_controller(fc)
+                s.ed.connect("changed", s._on_text_changed)
                 eb.append(s.ed)
                 if "directory" in opt.hints:
                     b = Gtk.Button.new_from_icon_name("folder-open")
@@ -720,10 +749,7 @@ class OptionWidget(Gtk.Box):
             s.ed = Gtk.Entry()
             s.ed.set_text(cur if cur is not None else str(opt.default_value or ""))
             s.ed.set_hexpand(True)
-            s.ed.connect("activate", lambda w: s._save(w.get_text()))
-            fc = Gtk.EventControllerFocus()
-            fc.connect("leave", lambda c: s._save(s.ed.get_text()))
-            s.ed.add_controller(fc)
+            s.ed.connect("changed", s._on_text_changed)
             bx.append(s.ed)
             g = Gtk.Button.new_from_icon_name("document-edit")
             g.set_tooltip_text("Grab key/button binding")
@@ -770,7 +796,7 @@ class OptionWidget(Gtk.Box):
             s.ed = Gtk.Entry()
             s.ed.set_text(cur if cur is not None else str(opt.default_value or ""))
             s.ed.set_hexpand(True)
-            s.ed.connect("activate", lambda w: s._save(w.get_text()))
+            s.ed.connect("changed", s._on_text_changed)
             s.end_box.append(s.ed)
 
     def _save(s, v):
@@ -778,6 +804,13 @@ class OptionWidget(Gtk.Box):
             return
         s.config.set_option(s.plugin.name, s.option.name, str(v))
         s.config.save()
+
+    def _on_text_changed(s, widget):
+        """Called on every keystroke — mirrors C++ WCM live-save behaviour."""
+        if not s._block:
+            s.config.set_option(s.plugin.name, s.option.name,
+                                str(widget.get_text()))
+            s.config.save()
 
     def _save_anim(s):
         s._save(
@@ -985,10 +1018,7 @@ class PluginPage(Gtk.Notebook):
         e = Gtk.Entry()
         e.set_text(v)
         e.set_hexpand(True)
-        e.connect("activate", lambda w, kk=k: s._so(cfg, plg, kk, w.get_text()))
-        fc = Gtk.EventControllerFocus()
-        fc.connect("leave", lambda c, ee=e, kk=k: s._so(cfg, plg, kk, ee.get_text()))
-        e.add_controller(fc)
+        e.connect("changed", lambda w, kk=k: s._so(cfg, plg, kk, w.get_text()))
         r.append(e)
         ch = Gtk.Button.new_from_icon_name("application-x-executable")
         ch.connect("clicked", lambda w, ee=e: s._choose_exec(ee))
@@ -1103,10 +1133,7 @@ class PluginPage(Gtk.Notebook):
         be = Gtk.Entry()
         be.set_text(bv)
         be.set_hexpand(True)
-        be.connect("activate", lambda w, b=bk: s._so(cfg, plg, b, w.get_text()))
-        fc = Gtk.EventControllerFocus()
-        fc.connect("leave", lambda c, e=be, b=bk: s._so(cfg, plg, b, e.get_text()))
-        be.add_controller(fc)
+        be.connect("changed", lambda w, b=bk: s._so(cfg, plg, b, w.get_text()))
         br.append(be)
         gb = Gtk.Button.new_from_icon_name("input-keyboard")
         gb.add_css_class("grab-btn")
@@ -1126,10 +1153,7 @@ class PluginPage(Gtk.Notebook):
             "changed",
             lambda w, e=exp, c=cn: e.set_label(f"Command {c}: {w.get_text()}"),
         )
-        ce.connect("activate", lambda w, c=ck: s._so(cfg, plg, c, w.get_text()))
-        fc2 = Gtk.EventControllerFocus()
-        fc2.connect("leave", lambda c, e=ce, cc=ck: s._so(cfg, plg, cc, e.get_text()))
-        ce.add_controller(fc2)
+        ce.connect("changed", lambda w, c=ck: s._so(cfg, plg, c, w.get_text()))
         cr.append(ce)
         rm = Gtk.Button.new_from_icon_name("list-remove")
         rm.add_css_class("remove-btn")
@@ -1190,7 +1214,7 @@ class PluginPage(Gtk.Notebook):
         e = Gtk.Entry()
         e.set_text(v)
         e.set_hexpand(True)
-        e.connect("activate", lambda w, kk=k: s._so(cfg, plg, kk, w.get_text()))
+        e.connect("changed", lambda w, kk=k: s._so(cfg, plg, kk, w.get_text()))
         r.append(e)
         bx.append(r)
 
@@ -1425,6 +1449,8 @@ class WCM(Gtk.ApplicationWindow):
             except:
                 pass
         s.config = WayfireConfigFile(get_config_path())
+        s.wf_shell_config = WayfireConfigFile(get_wfshell_config_path())
+        s.preset_mgr = PresetManager()
         s.plugins = load_all_metadata()
         if not s.plugins:
             s._gen_from_config()
@@ -1504,6 +1530,37 @@ class WCM(Gtk.ApplicationWindow):
         s.search_entry.set_margin_top(8)
         s.search_entry.connect("search-changed", s._on_search)
         ml.append(s.search_entry)
+
+        # --- Master presets section ---
+        ps = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        ps.add_css_class("preset-section")
+        ph = Gtk.Label(label="PRESETS")
+        ph.set_xalign(0)
+        ph.add_css_class("preset-header")
+        ps.append(ph)
+        s._master_combo = Gtk.ComboBoxText()
+        s._master_combo.add_css_class("preset-combo")
+        s._master_combo.set_hexpand(True)
+        s._refresh_master_presets()
+        ps.append(s._master_combo)
+        pb = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
+        pb.add_css_class("preset-btn-box")
+        pb.set_margin_top(4)
+        lb = Gtk.Button(label="Load")
+        lb.add_css_class("preset-load")
+        lb.connect("clicked", s._on_master_load)
+        pb.append(lb)
+        sb = Gtk.Button(label="Save")
+        sb.add_css_class("preset-save")
+        sb.connect("clicked", s._on_master_save)
+        pb.append(sb)
+        db = Gtk.Button(label="Delete")
+        db.add_css_class("preset-delete")
+        db.connect("clicked", s._on_master_delete)
+        pb.append(db)
+        ps.append(pb)
+        ml.append(ps)
+
         spacer = Gtk.Box()
         spacer.set_vexpand(True)
         ml.append(spacer)
@@ -1570,6 +1627,37 @@ class WCM(Gtk.ApplicationWindow):
         s.eb.append(s.el)
         s.ec.connect("toggled", s._on_pe)
         pl.append(s.eb)
+
+        # --- Plugin presets section ---
+        pps = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        pps.add_css_class("preset-section")
+        pps.set_margin_top(12)
+        pph = Gtk.Label(label="PLUGIN PRESETS")
+        pph.set_xalign(0)
+        pph.add_css_class("preset-header")
+        pps.append(pph)
+        s._plugin_combo = Gtk.ComboBoxText()
+        s._plugin_combo.add_css_class("preset-combo")
+        s._plugin_combo.set_hexpand(True)
+        pps.append(s._plugin_combo)
+        ppb = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
+        ppb.add_css_class("preset-btn-box")
+        ppb.set_margin_top(4)
+        plb = Gtk.Button(label="Load")
+        plb.add_css_class("preset-load")
+        plb.connect("clicked", s._on_plugin_load)
+        ppb.append(plb)
+        psb = Gtk.Button(label="Save")
+        psb.add_css_class("preset-save")
+        psb.connect("clicked", s._on_plugin_save)
+        ppb.append(psb)
+        pdb = Gtk.Button(label="Delete")
+        pdb.add_css_class("preset-delete")
+        pdb.connect("clicked", s._on_plugin_delete)
+        ppb.append(pdb)
+        pps.append(ppb)
+        pl.append(pps)
+
         sp2 = Gtk.Box()
         sp2.set_vexpand(True)
         pl.append(sp2)
@@ -1603,6 +1691,17 @@ class WCM(Gtk.ApplicationWindow):
         btn.set_child(bx)
         return btn
 
+    def _cfg_for(s, plg):
+        """Return the correct config file for a plugin.
+
+        wf-shell plugins (background, panel, dock, etc.) read from
+        wf-shell.ini, not wayfire.ini.  The C++ WCM handles this
+        with separate wf::config instances; we mirror that here.
+        """
+        if plg.type == PluginType.WF_SHELL:
+            return s.wf_shell_config
+        return s.config
+
     def _on_theme_toggle(s, switch, pspec):
         s._dark = not switch.get_active()
         _apply_theme(s._dark)
@@ -1621,9 +1720,10 @@ class WCM(Gtk.ApplicationWindow):
                 f"<span size='12000'><b>{plg.disp_name or plg.name}</b></span>"
             )
             s.pdl.set_markup(f"<span size='10000'><b>{plg.tooltip or ''}</b></span>")
+            s._refresh_plugin_presets()
             if s.plugin_page:
                 s.main_stack.remove(s.plugin_page)
-            s.plugin_page = PluginPage(plg, s.config)
+            s.plugin_page = PluginPage(plg, s._cfg_for(plg))
             s.main_stack.add_named(s.plugin_page, "plugin")
             s.main_stack.set_visible_child_name("plugin")
             s.left_stack.set_visible_child_name("plugin")
@@ -1651,6 +1751,200 @@ class WCM(Gtk.ApplicationWindow):
     def _on_pe(s, c):
         if s.current_plugin:
             s.set_plugin_enabled(s.current_plugin, c.get_active())
+
+    # ------------------------------------------------------------------
+    # Preset helpers
+    # ------------------------------------------------------------------
+
+    def _refresh_master_presets(s):
+        s._master_combo.remove_all()
+        for name in s.preset_mgr.list_master_presets():
+            s._master_combo.append_text(name)
+        if s._master_combo.get_model().iter_n_children(None) > 0:
+            s._master_combo.set_active(0)
+
+    def _refresh_plugin_presets(s):
+        s._plugin_combo.remove_all()
+        if s.current_plugin:
+            for name in s.preset_mgr.list_plugin_presets(s.current_plugin.name):
+                s._plugin_combo.append_text(name)
+            if s._plugin_combo.get_model().iter_n_children(None) > 0:
+                s._plugin_combo.set_active(0)
+
+    def _prompt_name(s, title, callback):
+        """Show a dialog asking for a preset name, then call callback(name)."""
+        dlg = Gtk.Window(
+            title=title, modal=True, transient_for=s,
+            default_width=340, default_height=120)
+        dlg.add_css_class("grab-dialog")
+        vb = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
+        vb.set_margin_start(16); vb.set_margin_end(16)
+        vb.set_margin_top(16); vb.set_margin_bottom(16)
+        lbl = Gtk.Label(label="Preset name:")
+        lbl.set_xalign(0)
+        vb.append(lbl)
+        entry = Gtk.Entry()
+        entry.set_hexpand(True)
+        vb.append(entry)
+        bb = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        bb.set_halign(Gtk.Align.END)
+        ok_btn = Gtk.Button(label="Save")
+        ok_btn.add_css_class("preset-save")
+        cancel_btn = Gtk.Button(label="Cancel")
+
+        def do_save(w):
+            name = entry.get_text().strip()
+            if name:
+                dlg.close()
+                callback(name)
+
+        ok_btn.connect("clicked", do_save)
+        entry.connect("activate", do_save)
+        cancel_btn.connect("clicked", lambda w: dlg.close())
+        bb.append(cancel_btn)
+        bb.append(ok_btn)
+        vb.append(bb)
+        dlg.set_child(vb)
+        dlg.present()
+
+    # --- Master preset actions ---
+
+    def _on_master_save(s, btn):
+        def do(name):
+            try:
+                # Save both wayfire and wf-shell options into one preset
+                s.preset_mgr.save_master_preset(name, s.config)
+                # Merge wf-shell options into the same preset file
+                ws_opts = s.wf_shell_config.get_all_options()
+                if ws_opts:
+                    path = s.preset_mgr._master_path(
+                        s.preset_mgr._sanitize(name))
+                    preset = WayfireConfigFile(path)
+                    for section, opts in ws_opts.items():
+                        for key, value in opts.items():
+                            preset.set_option(section, key, value)
+                    preset.save()
+                s._refresh_master_presets()
+                # Select the one just saved
+                model = s._master_combo.get_model()
+                it = model.get_iter_first()
+                i = 0
+                while it:
+                    if model.get_value(it, 0) == name:
+                        s._master_combo.set_active(i)
+                        break
+                    it = model.iter_next(it)
+                    i += 1
+            except Exception as e:
+                print(f"WCM: Failed to save master preset: {e}")
+        s._prompt_name("Save Master Preset", do)
+
+    def _on_master_load(s, btn):
+        name = s._master_combo.get_active_text()
+        if not name:
+            return
+        try:
+            # Build set of wf-shell section names so we route correctly
+            ws_sections = {p.name for p in s.plugins
+                           if p.type == PluginType.WF_SHELL}
+
+            path = s.preset_mgr._master_path(name)
+            preset = WayfireConfigFile(path)
+            for section in preset.get_sections():
+                opts = preset.get_section_options(section)
+                target = (s.wf_shell_config if section in ws_sections
+                          else s.config)
+                for key, value in opts.items():
+                    target.set_option(section, key, value)
+            s.config.save()
+            s.wf_shell_config.save()
+
+            # Refresh enabled states
+            enabled = s.config.get_enabled_plugins()
+            for p in s.plugins:
+                p.enabled = (p.is_core_plugin or
+                             p.type == PluginType.WF_SHELL or
+                             p.name in enabled)
+            # Refresh the main page checkboxes
+            for w in s.main_page._pw:
+                w.check.handler_block_by_func(w._on_t)
+                w.check.set_active(w.plugin.enabled)
+                w.check.handler_unblock_by_func(w._on_t)
+            # Refresh plugin page if open
+            if s.current_plugin:
+                s.open_page(s.current_plugin)
+        except Exception as e:
+            print(f"WCM: Failed to load master preset: {e}")
+
+    def _on_master_delete(s, btn):
+        name = s._master_combo.get_active_text()
+        if not name:
+            return
+        s.preset_mgr.delete_master_preset(name)
+        s._refresh_master_presets()
+
+    # --- Plugin preset actions ---
+
+    def _on_plugin_save(s, btn):
+        if not s.current_plugin:
+            return
+        plg = s.current_plugin
+
+        def do(name):
+            try:
+                s.preset_mgr.save_plugin_preset(name, plg.name, s._cfg_for(plg))
+                s._refresh_plugin_presets()
+                model = s._plugin_combo.get_model()
+                it = model.get_iter_first()
+                i = 0
+                while it:
+                    if model.get_value(it, 0) == name:
+                        s._plugin_combo.set_active(i)
+                        break
+                    it = model.iter_next(it)
+                    i += 1
+            except Exception as e:
+                print(f"WCM: Failed to save plugin preset: {e}")
+        s._prompt_name(f"Save {plg.disp_name or plg.name} Preset", do)
+
+    def _on_plugin_load(s, btn):
+        if not s.current_plugin:
+            return
+        name = s._plugin_combo.get_active_text()
+        if not name:
+            return
+        try:
+            s.preset_mgr.load_plugin_preset(
+                name, s.current_plugin.name, s._cfg_for(s.current_plugin))
+            # Refresh enabled state
+            enabled = s.config.get_enabled_plugins()
+            plg = s.current_plugin
+            plg.enabled = (plg.is_core_plugin or
+                           plg.type == PluginType.WF_SHELL or
+                           plg.name in enabled)
+            for w in s.main_page._pw:
+                if w.plugin is plg:
+                    w.check.handler_block_by_func(w._on_t)
+                    w.check.set_active(plg.enabled)
+                    w.check.handler_unblock_by_func(w._on_t)
+                    break
+            # Update sidebar toggle
+            s.ec.handler_block_by_func(s._on_pe)
+            s.ec.set_active(plg.enabled)
+            s.ec.handler_unblock_by_func(s._on_pe)
+            # Re-create the plugin page to reflect new values
+            s.open_page(plg)
+        except Exception as e:
+            print(f"WCM: Failed to load plugin preset: {e}")
+
+    def _on_plugin_delete(s, btn):
+        if not s.current_plugin:
+            return
+        name = s._plugin_combo.get_active_text()
+        if not name:
+            return
+        s.preset_mgr.delete_plugin_preset(name, s.current_plugin.name)
+        s._refresh_plugin_presets()
 
     def _launch_wd(s, btn):
         try:

@@ -216,3 +216,166 @@ class WayfireConfigFile:
         plugins = self.get_enabled_plugins()
         plugins = [p for p in plugins if p != name]
         self.set_enabled_plugins(plugins)
+
+    def get_all_options(self):
+        """Return dict of {section: {key: value}} for all options."""
+        result = OrderedDict()
+        for section in self.get_sections():
+            opts = self.get_section_options(section)
+            if opts:
+                result[section] = dict(opts)
+        return result
+
+
+class PresetManager:
+    """
+    Manages named presets stored as .ini files.
+
+    Presets are stored in a dedicated directory (default:
+    ~/.config/wayfire/presets/). Each preset is a standard INI file
+    written through WayfireConfigFile — so comments/formatting of
+    the *preset file itself* are preserved too.
+
+    When a preset is *loaded*, changes are applied one option at a
+    time through the live config's set_option(), so only the relevant
+    lines are modified in wayfire.ini. This honours the single-line-
+    change contract.
+    """
+
+    def __init__(self, preset_dir=None):
+        if preset_dir is None:
+            config_home = os.environ.get('XDG_CONFIG_HOME', '') or \
+                          os.path.join(os.path.expanduser('~'), '.config')
+            preset_dir = os.path.join(config_home, 'wayfire', 'presets')
+        self.preset_dir = preset_dir
+        os.makedirs(self.preset_dir, exist_ok=True)
+
+    # ------------------------------------------------------------------
+    # Naming helpers
+    # ------------------------------------------------------------------
+
+    def _master_path(self, name):
+        return os.path.join(self.preset_dir, f"{name}.ini")
+
+    def _plugin_dir(self, plugin_name):
+        d = os.path.join(self.preset_dir, 'plugins', plugin_name)
+        os.makedirs(d, exist_ok=True)
+        return d
+
+    def _plugin_path(self, plugin_name, preset_name):
+        return os.path.join(self._plugin_dir(plugin_name),
+                            f"{preset_name}.ini")
+
+    @staticmethod
+    def _sanitize(name):
+        """Sanitize a preset name to a safe filename component."""
+        return re.sub(r'[^\w\-. ]', '_', name).strip()
+
+    # ------------------------------------------------------------------
+    # Master presets — full config snapshot
+    # ------------------------------------------------------------------
+
+    def list_master_presets(self):
+        """Return sorted list of master preset names."""
+        names = []
+        if os.path.isdir(self.preset_dir):
+            for f in sorted(os.listdir(self.preset_dir)):
+                if f.endswith('.ini'):
+                    names.append(f[:-4])
+        return names
+
+    def save_master_preset(self, name, config):
+        """
+        Save the entire current config as a master preset.
+
+        Args:
+            name:   preset name (used as filename stem)
+            config: the live WayfireConfigFile instance
+        """
+        name = self._sanitize(name)
+        if not name:
+            raise ValueError("Preset name cannot be empty")
+        preset = WayfireConfigFile()
+        for section, opts in config.get_all_options().items():
+            for key, value in opts.items():
+                preset.set_option(section, key, value)
+        preset.save(self._master_path(name))
+
+    def load_master_preset(self, name, config):
+        """
+        Apply a master preset to the live config.
+
+        Only calls config.set_option() for each stored value, so the
+        single-line-change guarantee is preserved.
+        """
+        path = self._master_path(name)
+        if not os.path.isfile(path):
+            raise FileNotFoundError(f"Master preset '{name}' not found")
+        preset = WayfireConfigFile(path)
+        for section in preset.get_sections():
+            for key, value in preset.get_section_options(section).items():
+                config.set_option(section, key, value)
+        config.save()
+
+    def delete_master_preset(self, name):
+        path = self._master_path(name)
+        if os.path.isfile(path):
+            os.unlink(path)
+
+    # ------------------------------------------------------------------
+    # Plugin presets — single-section snapshot
+    # ------------------------------------------------------------------
+
+    def list_plugin_presets(self, plugin_name):
+        """Return sorted list of preset names for a given plugin."""
+        d = os.path.join(self.preset_dir, 'plugins', plugin_name)
+        if not os.path.isdir(d):
+            return []
+        return sorted(f[:-4] for f in os.listdir(d) if f.endswith('.ini'))
+
+    def save_plugin_preset(self, name, plugin_name, config):
+        """
+        Save the current options for *one* plugin section as a preset.
+        """
+        name = self._sanitize(name)
+        if not name:
+            raise ValueError("Preset name cannot be empty")
+        preset = WayfireConfigFile()
+        opts = config.get_section_options(plugin_name)
+        for key, value in opts.items():
+            preset.set_option(plugin_name, key, value)
+
+        # Also store whether the plugin was enabled (in [core] plugins)
+        enabled = config.get_enabled_plugins()
+        preset.set_option('_preset_meta', 'enabled',
+                          'true' if plugin_name in enabled else 'false')
+
+        preset.save(self._plugin_path(plugin_name, name))
+
+    def load_plugin_preset(self, name, plugin_name, config):
+        """
+        Apply a plugin preset — only touches that plugin's section.
+        """
+        path = self._plugin_path(plugin_name, name)
+        if not os.path.isfile(path):
+            raise FileNotFoundError(
+                f"Plugin preset '{name}' for '{plugin_name}' not found")
+        preset = WayfireConfigFile(path)
+        opts = preset.get_section_options(plugin_name)
+        for key, value in opts.items():
+            config.set_option(plugin_name, key, value)
+
+        # Restore enabled state if recorded
+        was_enabled = preset.get_option('_preset_meta', 'enabled')
+        if was_enabled is not None:
+            if was_enabled == 'true':
+                config.enable_plugin(plugin_name)
+            else:
+                config.disable_plugin(plugin_name)
+
+        config.save()
+
+    def delete_plugin_preset(self, name, plugin_name):
+        path = self._plugin_path(plugin_name, name)
+        if os.path.isfile(path):
+            os.unlink(path)
