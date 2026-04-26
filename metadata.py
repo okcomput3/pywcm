@@ -369,13 +369,6 @@ def find_metadata_dirs():
         if os.path.isdir(d) and d not in dirs:
             dirs.append(d)
 
-    # 5. Glob search as last resort
-    for pattern in ('/usr/*/share/wayfire/metadata',
-                    '/opt/*/share/wayfire/metadata'):
-        for d in glob.glob(pattern):
-            if os.path.isdir(d) and d not in dirs:
-                dirs.append(d)
-
     return dirs
 
 
@@ -399,10 +392,6 @@ def find_wfshell_metadata_dirs():
         if os.path.isdir(d) and d not in dirs:
             dirs.append(d)
 
-    for pattern in ('/opt/*/share/wayfire/metadata/wf-shell',):
-        for d in glob.glob(pattern):
-            if os.path.isdir(d) and d not in dirs:
-                dirs.append(d)
 
     return dirs
 
