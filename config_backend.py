@@ -8,6 +8,8 @@ the entire file. This is the key improvement over wf-config's approach.
 
 import os
 import re
+import shutil
+import subprocess
 from collections import OrderedDict
 
 
@@ -160,6 +162,32 @@ class WayfireConfigFile:
             del self.entries[idx]
             self._rebuild_index()
 
+    def remove_section(self, section):
+        """Remove an entire ``[section]`` and the lines that belong to it.
+
+        Deletes the section header plus everything up to the next section
+        header. Trailing blank/comment lines (which usually introduce the
+        *next* section) are preserved, so removing one output doesn't eat
+        the comment documenting the one after it.
+        """
+        start = None
+        for i, e in enumerate(self.entries):
+            if e.kind == 'section' and e.section == section:
+                start = i
+                break
+        if start is None:
+            return
+        end = len(self.entries)
+        for i in range(start + 1, len(self.entries)):
+            if self.entries[i].kind == 'section':
+                end = i
+                break
+        # Don't remove trailing blanks/comments that lead into the next section.
+        while end - 1 > start and self.entries[end - 1].kind in ('blank', 'comment'):
+            end -= 1
+        del self.entries[start:end]
+        self._rebuild_index()
+
     def _find_section_end(self, section):
         """Find the index where new options should be inserted for a section."""
         in_section = False
@@ -257,6 +285,16 @@ class PresetManager:
     def _master_path(self, name):
         return os.path.join(self.preset_dir, f"{name}.ini")
 
+    def _master_wfshell_path(self, name):
+        """Companion path holding the verbatim wf-shell.ini snapshot.
+
+        Stored under a 'wfshell' subdirectory so it is never picked up by
+        list_master_presets() (which only scans the top level for *.ini).
+        """
+        d = os.path.join(self.preset_dir, 'wfshell')
+        os.makedirs(d, exist_ok=True)
+        return os.path.join(d, f"{name}.ini")
+
     def _plugin_dir(self, plugin_name):
         d = os.path.join(self.preset_dir, 'plugins', plugin_name)
         os.makedirs(d, exist_ok=True)
@@ -321,6 +359,68 @@ class PresetManager:
         path = self._master_path(name)
         if os.path.isfile(path):
             os.unlink(path)
+        ws = self._master_wfshell_path(name)
+        if os.path.isfile(ws):
+            os.unlink(ws)
+
+    # ------------------------------------------------------------------
+    # Master presets — verbatim whole-file snapshot
+    # ------------------------------------------------------------------
+    #
+    # These copy the config file(s) byte-for-byte instead of rewriting
+    # them option-by-option. Copying the whole file preserves backslash
+    # line-continuations (e.g. the multi-line `plugins = \ ...` list in a
+    # stock wayfire.ini) and any formatting the line parser would drop,
+    # so switching presets can never accidentally blank out the plugin
+    # list. The single-line-change contract still governs ordinary option
+    # edits; only full-config preset switching uses this whole-file path.
+
+    def save_master_preset_file(self, name, config_path, wfshell_path=None):
+        """Snapshot the live config file(s) verbatim as a master preset.
+
+        Args:
+            name:         preset name (used as filename stem)
+            config_path:  path to the live wayfire.ini
+            wfshell_path: path to the live wf-shell.ini (optional)
+        """
+        name = self._sanitize(name)
+        if not name:
+            raise ValueError("Preset name cannot be empty")
+
+        dst = self._master_path(name)
+        if config_path and os.path.isfile(config_path):
+            shutil.copyfile(config_path, dst)
+        else:
+            # No live config yet — still create the preset so it exists.
+            open(dst, 'w').close()
+
+        ws_dst = self._master_wfshell_path(name)
+        if wfshell_path and os.path.isfile(wfshell_path):
+            shutil.copyfile(wfshell_path, ws_dst)
+        elif os.path.isfile(ws_dst):
+            # Keep the companion in sync if there's no wf-shell config now.
+            os.unlink(ws_dst)
+
+    def load_master_preset_file(self, name, config_path, wfshell_path=None):
+        """Restore a master preset by copying the whole file(s) back verbatim.
+
+        Overwrites the live config file(s) with the stored snapshot. The
+        caller is responsible for reloading any in-memory config objects
+        afterwards.
+        """
+        src = self._master_path(name)
+        if not os.path.isfile(src):
+            raise FileNotFoundError(f"Master preset '{name}' not found")
+
+        os.makedirs(os.path.dirname(config_path) or '.', exist_ok=True)
+        shutil.copyfile(src, config_path)
+
+        if wfshell_path:
+            ws_src = self._master_wfshell_path(name)
+            if os.path.isfile(ws_src):
+                os.makedirs(os.path.dirname(wfshell_path) or '.',
+                            exist_ok=True)
+                shutil.copyfile(ws_src, wfshell_path)
 
     # ------------------------------------------------------------------
     # Plugin presets — single-section snapshot
@@ -379,3 +479,177 @@ class PresetManager:
         path = self._plugin_path(plugin_name, name)
         if os.path.isfile(path):
             os.unlink(path)
+
+class OutputManager:
+    """Detect connected monitors and read/write their wayfire.ini config.
+
+    Output configuration lives in ``[output:<name>]`` sections::
+
+        mode      = <w>x<h>@<refresh_mHz>   (or 'off' / 'default' / 'mirror <out>')
+        position  = <x>,<y>
+        scale     = <float>
+        transform = normal|90|180|270|flipped|90_flipped|180_flipped|270_flipped
+
+    Detection shells out to ``wlr-randr`` and parses its text output. This
+    class is toolkit-agnostic and returns plain dicts, so any frontend can
+    render it (mirroring the backend/frontend split used elsewhere).
+    """
+
+    #: transform values as written in wayfire.ini
+    TRANSFORMS = ['normal', '90', '180', '270',
+                  'flipped', '90_flipped', '180_flipped', '270_flipped']
+
+    # wlr-randr prints rotated flips as 'flipped-90'; wayfire.ini wants
+    # '90_flipped'. Translate so a detected value matches the config vocabulary.
+    _WLR_TO_WF = {
+        'normal': 'normal', '90': '90', '180': '180', '270': '270',
+        'flipped': 'flipped',
+        'flipped-90': '90_flipped',
+        'flipped-180': '180_flipped',
+        'flipped-270': '270_flipped',
+    }
+
+    _MODE_RE = re.compile(r'(\d+)\s*x\s*(\d+)\s*px(?:\s*,\s*([\d.]+)\s*Hz)?(.*)')
+
+    @staticmethod
+    def section_name(output_name):
+        return f"output:{output_name}"
+
+    @staticmethod
+    def validate_mode(res, refresh_mhz, enabled, modes):
+        """Check a chosen resolution/refresh before it's written to the config.
+
+        Returns ``(level, message)`` where level is ``'ok'``, ``'warn'`` or
+        ``'error'``. An ``'error'`` means the value is malformed or
+        unsupported and must NOT be written, so wayfire is never handed a
+        bad mode (which can blank an output). A ``'warn'`` is allowed but
+        flagged to the user.
+
+        Args:
+            res:         resolution string like '1920x1080' ('' means auto)
+            refresh_mhz: refresh in millihertz; 0 = unspecified,
+                         negative = the user typed something unparseable
+            enabled:     whether the output is on (disabled is always valid)
+            modes:       advertised modes for this output (may be empty/None,
+                         in which case only the format is checked)
+        """
+        if not enabled:
+            return ('ok', '')
+        res = (res or '').strip()
+        if res == '':
+            return ('ok', '')  # empty -> 'default' (auto-detect), always safe
+        if not re.match(r'^\d+x\d+$', res):
+            return ('error',
+                    'Invalid resolution \u2014 use WIDTHxHEIGHT, e.g. 1920x1080.')
+        if refresh_mhz is not None and refresh_mhz < 0:
+            return ('error',
+                    'Invalid refresh rate \u2014 enter a number of Hz, e.g. 60.')
+        if modes:
+            adv = {}
+            for m in modes:
+                adv.setdefault(f"{m['width']}x{m['height']}", []).append(
+                    m['refresh'])
+            if res not in adv:
+                return ('error',
+                        f'{res} is not a mode this monitor reports; '
+                        'it may fail to apply. Pick a listed resolution.')
+            if refresh_mhz and refresh_mhz > 0 and not any(
+                    abs(refresh_mhz - r) <= 500 for r in adv[res]):
+                return ('warn',
+                        "That refresh rate isn't advertised for this "
+                        "resolution; it may be ignored.")
+        return ('ok', '')
+
+    @staticmethod
+    def list_configured_outputs(config):
+        """Return names of outputs that already have an ``[output:<name>]`` section."""
+        names = []
+        for sec in config.get_sections():
+            if sec.startswith('output:'):
+                n = sec.split(':', 1)[1]
+                if n and n not in names:
+                    names.append(n)
+        return names
+
+    def detect(self):
+        """Return a list of detected outputs, or ``[]`` if unavailable.
+
+        Each entry is a dict::
+
+            {
+                'name': str, 'description': str, 'enabled': bool,
+                'modes': [ {'width', 'height', 'refresh'(mHz),
+                            'current', 'preferred'}, ... ],
+                'current_mode': (w, h, refresh_mHz) | None,
+                'position': (x, y) | None,
+                'transform': str,   # wayfire vocabulary
+                'scale': float,
+            }
+
+        Returns ``[]`` when wlr-randr is missing or no Wayland session is
+        available, so the frontend can fall back to manual entry.
+        """
+        try:
+            r = subprocess.run(['wlr-randr'], capture_output=True,
+                               text=True, timeout=5)
+        except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+            return []
+        if r.returncode != 0 or not r.stdout.strip():
+            return []
+        return self._parse(r.stdout)
+
+    def _parse(self, text):
+        outputs = []
+        cur = None
+        for raw in text.splitlines():
+            if not raw.strip():
+                continue
+            if not raw.startswith((' ', '\t')):
+                # Output header line:  <name> "<description>"
+                name = raw.split()[0]
+                desc = ''
+                if '"' in raw:
+                    try:
+                        desc = raw.split('"', 1)[1].rsplit('"', 1)[0]
+                    except IndexError:
+                        desc = ''
+                cur = {'name': name, 'description': desc, 'enabled': False,
+                       'modes': [], 'current_mode': None, 'position': None,
+                       'transform': 'normal', 'scale': 1.0}
+                outputs.append(cur)
+                continue
+            if cur is None:
+                continue
+            line = raw.strip()
+            low = line.lower()
+            if low.startswith('enabled:'):
+                cur['enabled'] = 'yes' in low
+            elif low.startswith('position:'):
+                try:
+                    x, y = line.split(':', 1)[1].strip().split(',')
+                    cur['position'] = (int(x), int(y))
+                except (ValueError, IndexError):
+                    pass
+            elif low.startswith('transform:'):
+                t = line.split(':', 1)[1].strip()
+                cur['transform'] = self._WLR_TO_WF.get(t, t)
+            elif low.startswith('scale:'):
+                try:
+                    cur['scale'] = float(line.split(':', 1)[1].strip())
+                except (ValueError, IndexError):
+                    pass
+            elif 'px' in low:
+                m = self._MODE_RE.match(line)
+                if m:
+                    w, h = int(m.group(1)), int(m.group(2))
+                    refresh = (int(round(float(m.group(3)) * 1000))
+                               if m.group(3) else 0)
+                    flags = m.group(4) or ''
+                    is_cur = 'current' in flags
+                    cur['modes'].append({
+                        'width': w, 'height': h, 'refresh': refresh,
+                        'current': is_cur, 'preferred': 'preferred' in flags,
+                    })
+                    if is_cur:
+                        cur['current_mode'] = (w, h, refresh)
+        return outputs

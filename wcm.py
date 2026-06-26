@@ -6,9 +6,9 @@ import gi
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("Gdk", "4.0")
-import sys, os, subprocess, glob, shutil, traceback
+import sys, os, subprocess, glob, shutil, traceback, re
 from gi.repository import Gtk, Gdk, GLib, Gio, GdkPixbuf, Pango
-from config_backend import WayfireConfigFile, PresetManager
+from config_backend import WayfireConfigFile, PresetManager, OutputManager
 from metadata import (
     load_all_metadata,
     load_metadata_from_dir,
@@ -228,6 +228,19 @@ tooltip label {{ color: @text_primary; }}
 .preset-load:hover {{ background-color: rgba({ab},0.14); border-color: rgba({ab},0.38); }}
 .preset-delete {{ background-color: rgba({ar},0.04); border: 1px solid rgba({ar},0.10); color: @rose; }}
 .preset-delete:hover {{ background-color: rgba({ar},0.10); border-color: rgba({ar},0.40); }}
+.output-warn {{ color: @amber; font-size: 0.85em; margin-top: 2px; }}
+.output-error {{ color: @danger; font-weight: 600; font-size: 0.85em; margin-top: 2px; }}
+
+window.confirm-window {{ background-color: {panel_bg}; }}
+.confirm-card {{ background-color: {panel_bg}; border: 1px solid rgba({ab},0.22); border-radius: 16px; box-shadow: 0 18px 50px rgba(0,0,0,{'0.65' if dark else '0.18'}); }}
+.confirm-title {{ color: {'#ffffff' if dark else '#1a1510'}; font-weight: 700; font-size: 1.12em; }}
+.confirm-countbox {{ background-color: @bg_input; border: 1px solid rgba({ab},0.14); border-radius: 14px; }}
+.confirm-count {{ color: @amber_light; font-weight: 800; font-size: 2.6em; }}
+.confirm-detail {{ color: @text_secondary; font-size: 0.95em; }}
+.confirm-keep {{ background-color: rgba({ab},0.22); border: 1px solid @amber; color: @text_primary; font-weight: 700; }}
+.confirm-keep:hover {{ background-color: rgba({ab},0.34); border-color: @amber; color: @text_primary; }}
+.confirm-close {{ background-color: transparent; border-color: transparent; padding: 2px 8px; }}
+.confirm-close:hover {{ background-color: rgba({ab},0.14); border-color: transparent; }}
 """
 
 
@@ -379,6 +392,9 @@ class KeyGrabWindow(Gtk.Window):
         cl.set_button(0)
         cl.connect("pressed", s._on_cl)
         s.add_controller(cl)
+        # Match the original C++ WCM, which calls grab_dialog.fullscreen()
+        # so the binding-capture window covers the whole screen.
+        s.fullscreen()
 
     def _ms(s):
         p = []
@@ -598,6 +614,10 @@ def get_wfshell_config_path():
 
 
 LABEL_W = 200
+
+#: Seconds the "Confirm Display Changes" prompt waits before auto-reverting a
+#: resolution, refresh-rate or rotation change that the user hasn't confirmed.
+CONFIRM_TIMEOUT_SECONDS = 15
 
 
 def _int(v, d):
@@ -1135,7 +1155,7 @@ class PluginPage(Gtk.Notebook):
         be.set_hexpand(True)
         be.connect("changed", lambda w, b=bk: s._so(cfg, plg, b, w.get_text()))
         br.append(be)
-        gb = Gtk.Button.new_from_icon_name("input-keyboard")
+        gb = Gtk.Button.new_from_icon_name("document-edit")
         gb.add_css_class("grab-btn")
         gb.connect("clicked", lambda w, e=be, b=bk: s._grab_for(e, cfg, plg, b))
         br.append(gb)
@@ -1436,6 +1456,786 @@ class MainPage(Gtk.ScrolledWindow):
         return False
 
 
+# ----------------------------------------------------------------------
+# DISPLAY (output) configuration
+# ----------------------------------------------------------------------
+
+
+def _fmt_refresh(mhz):
+    """Format a refresh rate (millihertz) for display, e.g. 60000 -> '60 Hz'."""
+    if not mhz:
+        return ""
+    hz = mhz / 1000.0
+    if abs(hz - round(hz)) < 0.0005:
+        return f"{int(round(hz))} Hz"
+    return f"{hz:.3f}".rstrip("0").rstrip(".") + " Hz"
+
+
+def _parse_refresh(text):
+    """Parse a refresh string ('60 Hz', '59.951') back to millihertz."""
+    t = (text or "").lower().replace("hz", "").strip()
+    if not t:
+        return 0
+    try:
+        return int(round(float(t) * 1000))
+    except ValueError:
+        return 0
+
+
+def _build_mode(res, refresh_mhz):
+    """Compose a wayfire 'mode' value from a resolution and refresh (mHz)."""
+    res = (res or "").strip()
+    if not res:
+        return "default"
+    if refresh_mhz:
+        return f"{res}@{refresh_mhz}"
+    return res
+
+
+def _parse_mode(mode_str):
+    """Split a wayfire 'mode' value into (resolution, refresh_mHz, is_off)."""
+    if mode_str is None:
+        return (None, 0, False)
+    m = mode_str.strip()
+    if m == "off":
+        return (None, 0, True)
+    if m == "" or m == "default" or m.startswith("mirror"):
+        return (None, 0, False)
+    res, refresh = m, 0
+    if "@" in m:
+        res, rf = m.split("@", 1)
+        try:
+            val = float(rf.strip())
+            # Values < 1000 are Hz (e.g. 60, 59.951); >= 1000 are already mHz.
+            refresh = int(round(val if val >= 1000 else val * 1000))
+        except ValueError:
+            refresh = 0
+    res = res.strip()
+    if not re.match(r"^\d+x\d+$", res):
+        res = None
+    return (res, refresh, False)
+
+
+def _mode_human(res, ref_text):
+    """Human label for a resolution + refresh, e.g. '3440x1440@143.923'."""
+    res = (res or "").strip()
+    if not res:
+        return "default"
+    rf = _parse_refresh(ref_text)
+    if rf > 0:
+        hz = rf / 1000.0
+        hzs = f"{hz:.3f}".rstrip("0").rstrip(".")
+        return f"{res}@{hzs}"
+    return res
+
+
+class _DisplayConfirmDialog(Gtk.Window):
+    """Floating "Confirm Display Changes" prompt with an auto-revert countdown.
+
+    Mirrors the safety prompt other display tools show: once a resolution,
+    refresh-rate or rotation change has been applied, the user has a few
+    seconds to confirm it. If they don't (Revert, the close button, Escape,
+    or the countdown running out), ``on_revert`` restores the previous value;
+    ``on_keep`` accepts it. ``on_finished`` always runs once the popup closes,
+    so the owner can drop its reference.
+
+    Only resolution / refresh / rotation flow through here — nothing else
+    about the output configuration is touched.
+    """
+
+    def __init__(s, parent, *, seconds, detail_lines,
+                 on_keep, on_revert, on_finished):
+        super().__init__()
+        s._on_keep = on_keep
+        s._on_revert = on_revert
+        s._on_finished = on_finished
+        s._seconds = seconds
+        s._remaining = seconds
+        s._timer_id = 0
+        s._done = False
+
+        s.set_title("Confirm Display Changes")
+        s.add_css_class("confirm-window")
+        s.set_decorated(False)
+        s.set_resizable(False)
+        if parent is not None:
+            s.set_transient_for(parent)
+            s.set_modal(True)
+        s.set_default_size(360, -1)
+
+        card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
+        card.add_css_class("confirm-card")
+        card.set_margin_start(18)
+        card.set_margin_end(18)
+        card.set_margin_top(16)
+        card.set_margin_bottom(16)
+        s.set_child(card)
+
+        # header: title + close (X)
+        hdr = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        title = Gtk.Label(label="Confirm Display Changes")
+        title.set_xalign(0)
+        title.set_hexpand(True)
+        title.add_css_class("confirm-title")
+        hdr.append(title)
+        xbtn = Gtk.Button.new_from_icon_name("window-close-symbolic")
+        xbtn.add_css_class("confirm-close")
+        xbtn.set_valign(Gtk.Align.CENTER)
+        xbtn.set_tooltip_text("Revert")
+        xbtn.connect("clicked", lambda *_: s._finish("revert"))
+        hdr.append(xbtn)
+        card.append(hdr)
+
+        # big countdown
+        countbox = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
+        countbox.add_css_class("confirm-countbox")
+        countbox.set_halign(Gtk.Align.FILL)
+        countbox.set_margin_top(2)
+        s._count_lbl = Gtk.Label(label=f"{s._remaining}s")
+        s._count_lbl.add_css_class("confirm-count")
+        s._count_lbl.set_hexpand(True)
+        s._count_lbl.set_margin_top(14)
+        s._count_lbl.set_margin_bottom(14)
+        countbox.append(s._count_lbl)
+        card.append(countbox)
+
+        # change description
+        s._detail_lbl = Gtk.Label()
+        s._detail_lbl.set_xalign(0)
+        s._detail_lbl.set_wrap(True)
+        s._detail_lbl.add_css_class("confirm-detail")
+        card.append(s._detail_lbl)
+        s._set_detail(detail_lines)
+
+        # buttons
+        btns = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        btns.set_halign(Gtk.Align.END)
+        btns.set_margin_top(4)
+        revert = Gtk.Button(label="Revert")
+        revert.connect("clicked", lambda *_: s._finish("revert"))
+        keep = Gtk.Button(label="Keep Changes")
+        keep.add_css_class("confirm-keep")
+        keep.connect("clicked", lambda *_: s._finish("keep"))
+        btns.append(revert)
+        btns.append(keep)
+        card.append(btns)
+
+        # Escape reverts, like dismissing the prompt
+        kc = Gtk.EventControllerKey()
+        kc.connect("key-pressed", s._on_key)
+        s.add_controller(kc)
+
+        s._start_timer()
+
+    # -- public API used by the owner to supersede an in-flight prompt --
+    def update(s, detail_lines):
+        """Refresh the change description and restart the countdown."""
+        if s._done:
+            return
+        s._set_detail(detail_lines)
+        s._remaining = s._seconds
+        s._count_lbl.set_text(f"{s._remaining}s")
+        s._start_timer()
+
+    def close_silent(s):
+        """Close without keeping or reverting (e.g. user returned to baseline)."""
+        s._finish("silent")
+
+    # -- internals --
+    def _set_detail(s, detail_lines):
+        text = "\n".join(detail_lines) if detail_lines else ""
+        s._detail_lbl.set_text(text)
+        s._detail_lbl.set_visible(bool(text))
+
+    def _on_key(s, _c, keyval, _kc, _state):
+        if keyval == Gdk.KEY_Escape:
+            s._finish("revert")
+            return True
+        if keyval in (Gdk.KEY_Return, Gdk.KEY_KP_Enter):
+            s._finish("keep")
+            return True
+        return False
+
+    def _start_timer(s):
+        if s._timer_id:
+            GLib.source_remove(s._timer_id)
+        s._timer_id = GLib.timeout_add_seconds(1, s._tick)
+
+    def _tick(s):
+        s._remaining -= 1
+        if s._remaining <= 0:
+            s._timer_id = 0
+            s._finish("revert")
+            return False
+        s._count_lbl.set_text(f"{s._remaining}s")
+        return True
+
+    def _finish(s, reason):
+        if s._done:
+            return
+        s._done = True
+        if s._timer_id:
+            GLib.source_remove(s._timer_id)
+            s._timer_id = 0
+        try:
+            s.destroy()
+        except Exception:
+            pass
+        if reason == "keep" and s._on_keep:
+            s._on_keep()
+        elif reason == "revert" and s._on_revert:
+            s._on_revert()
+        if s._on_finished:
+            s._on_finished()
+
+
+class DisplayPage(Gtk.ScrolledWindow):
+    """Built-in monitor/output configuration.
+
+    Detects connected monitors with wlr-randr and writes the chosen
+    resolution, refresh rate, scale, position, rotation and on/off state
+    into the ``[output:<name>]`` sections of wayfire.ini — so outputs can
+    be configured from the GUI instead of editing the config by hand.
+    Values are saved live (per control), matching the rest of WCM.
+
+    (The original C++ WCM has no output configuration and defers to
+    wdisplays, which adjusts outputs at runtime but never persists them
+    to the config file.)
+    """
+
+    def __init__(s, app):
+        super().__init__()
+        s.app = app
+        s.set_vexpand(True)
+        s.set_hexpand(True)
+        s._om = OutputManager()
+        #: the currently-open "Confirm Display Changes" prompt, if any
+        s._active_confirm = None
+        #: pending debounce timer ids for the confirm prompt (cancelled on reload)
+        s._confirm_sources = set()
+        s._root = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        s._root.set_margin_start(14)
+        s._root.set_margin_end(14)
+        s._root.set_margin_top(14)
+        s._root.set_margin_bottom(14)
+        s.set_child(s._root)
+        s.reload()
+
+    def reload(s, *_):
+        # Rebuilding the cards invalidates the widgets a pending confirm
+        # prompt would revert into, so close it first (without reverting) and
+        # cancel any debounce timers still pointing at the old cards.
+        if s._active_confirm is not None:
+            s._active_confirm.close_silent()
+            s._active_confirm = None
+        for sid in list(s._confirm_sources):
+            GLib.source_remove(sid)
+        s._confirm_sources.clear()
+        child = s._root.get_first_child()
+        while child:
+            nxt = child.get_next_sibling()
+            s._root.remove(child)
+            child = nxt
+
+        cfg = s.app.config
+        detected = s._om.detect()
+        det_names = [d["name"] for d in detected]
+        merged = list(detected)
+        for n in OutputManager.list_configured_outputs(cfg):
+            if n not in det_names:
+                merged.append({
+                    "name": n,
+                    "description": "(configured \u2014 not currently connected)",
+                    "enabled": True, "modes": [], "current_mode": None,
+                    "position": None, "transform": "normal", "scale": 1.0,
+                })
+
+        if not merged:
+            info = Gtk.Label()
+            info.set_wrap(True)
+            info.set_xalign(0)
+            info.set_markup(
+                "<b>No outputs detected.</b>\n\nwlr-randr isn't available, or "
+                "Wayfire isn't currently running. You can still add an output "
+                "by name below and configure it manually."
+            )
+            info.add_css_class("plugin-desc")
+            s._root.append(info)
+
+        # The "main display" is protected: it can't be switched off or
+        # removed, because that blanks the screen and forces the user back to
+        # hand-editing the .ini. The protected display is the one the WCM
+        # window is currently shown on, so moving WCM to another monitor lets
+        # you switch the others off. If that can't be resolved, fall back to
+        # the first output that is currently on.
+        primary = None
+        win_out = s._window_output_name()
+        if win_out and any(oi["name"] == win_out for oi in merged):
+            primary = win_out
+        else:
+            for oi in merged:
+                m = cfg.get_option(OutputManager.section_name(oi["name"]), "mode")
+                on = (m.strip() != "off") if m is not None else oi.get("enabled", True)
+                if on:
+                    primary = oi["name"]
+                    break
+
+        for oi in merged:
+            s._root.append(
+                s._build_card(oi, cfg, is_primary=(oi["name"] == primary),
+                              is_connected=(oi["name"] in det_names)))
+
+        s._root.append(s._build_add_row(cfg))
+
+    def _window_output_name(s):
+        """Return the connector name of the output the WCM window is on.
+
+        Uses the Wayland surface's current monitor (Wayfire reports this via
+        wl_surface enter/leave). Returns None if it can't be determined, e.g.
+        before the window is mapped or on backends without connector info.
+        """
+        try:
+            surface = s.app.get_surface()
+            display = s.app.get_display()
+            if surface is None or display is None:
+                return None
+            monitor = display.get_monitor_at_surface(surface)
+            if monitor is None:
+                return None
+            return monitor.get_connector()
+        except Exception:
+            return None
+
+    def _build_card(s, oi, cfg, is_primary=False, is_connected=True):
+        name = oi["name"]
+        sec = OutputManager.section_name(name)
+        st = {"block": True}  # suppress writes during initial population
+
+        fr = Gtk.Frame()
+        fr.add_css_class("binding-frame")
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        box.set_margin_start(12)
+        box.set_margin_end(12)
+        box.set_margin_top(10)
+        box.set_margin_bottom(10)
+        fr.set_child(box)
+
+        # --- header: name + description + enable switch ---
+        hdr = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        title = Gtk.Label()
+        desc = oi.get("description") or ""
+        markup = f"<b>{GLib.markup_escape_text(name)}</b>"
+        if is_primary:
+            markup += "  <span size='small'>\u2014 main display (running WCM)</span>"
+        if desc:
+            markup += f"  <span size='small'>{GLib.markup_escape_text(desc)}</span>"
+        title.set_markup(markup)
+        title.set_xalign(0)
+        title.set_hexpand(True)
+        title.add_css_class("plugin-title")
+        hdr.append(title)
+        en_lbl = Gtk.Label(label="Enabled")
+        en_lbl.add_css_class("option-label")
+        hdr.append(en_lbl)
+        sw = Gtk.Switch()
+        sw.set_valign(Gtk.Align.CENTER)
+        hdr.append(sw)
+        rmb = Gtk.Button.new_from_icon_name("user-trash")
+        rmb.add_css_class("remove-btn")
+        rmb.set_valign(Gtk.Align.CENTER)
+        if is_primary:
+            rmb.set_sensitive(False)
+            rmb.set_tooltip_text(
+                "WCM is running on this display, so it can't be removed "
+                "\u2014 that would blank your screen. Move WCM to another "
+                "display to manage this one.")
+        else:
+            rmb.set_tooltip_text("Remove this output (delete its config section)")
+            rmb.connect("clicked", lambda w, n=name: s._confirm_remove(n))
+        hdr.append(rmb)
+        box.append(hdr)
+
+        # --- initial state: prefer config, fall back to detection ---
+        cfg_mode = cfg.get_option(sec, "mode")
+        res0, refresh0, is_off = _parse_mode(cfg_mode)
+        if cfg_mode is None:
+            cm = oi.get("current_mode")
+            if cm:
+                res0, refresh0 = f"{cm[0]}x{cm[1]}", cm[2]
+            is_off = not oi.get("enabled", True)
+        enabled0 = not is_off
+
+        # resolution / refresh option tables from detected modes
+        res_list, ref_by_res = [], {}
+        for m in oi.get("modes", []):
+            r = f"{m['width']}x{m['height']}"
+            if r not in ref_by_res:
+                ref_by_res[r], _ = [], res_list.append(r)
+            ref_by_res[r].append(m["refresh"])
+        res_list.sort(
+            key=lambda r: -(int(r.split("x")[0]) * int(r.split("x")[1]))
+        )
+
+        res_combo = Gtk.ComboBoxText.new_with_entry()
+        for r in res_list:
+            res_combo.append_text(r)
+        if res0 and res0 not in res_list:
+            res_combo.append_text(res0)
+        res_combo.get_child().set_text(res0 or "")
+
+        ref_combo = Gtk.ComboBoxText.new_with_entry()
+
+        def populate_refresh(selected_res, keep=""):
+            ref_combo.remove_all()
+            seen = set()
+            for rf in sorted(ref_by_res.get(selected_res, []), reverse=True):
+                lbl = _fmt_refresh(rf)
+                if lbl and lbl not in seen:
+                    seen.add(lbl)
+                    ref_combo.append_text(lbl)
+            ref_combo.get_child().set_text(keep or "")
+
+        populate_refresh(res0, _fmt_refresh(refresh0))
+
+        scale_val = cfg.get_option(sec, "scale")
+        try:
+            scale_val = float(scale_val) if scale_val else float(oi.get("scale") or 1.0)
+        except ValueError:
+            scale_val = 1.0
+        scale_spin = Gtk.SpinButton(
+            adjustment=Gtk.Adjustment(value=scale_val, lower=0.25, upper=8.0,
+                                      step_increment=0.05),
+            digits=2,
+        )
+
+        px, py = 0, 0
+        cfg_pos = cfg.get_option(sec, "position")
+        if cfg_pos and "," in cfg_pos:
+            try:
+                px, py = (int(float(v)) for v in cfg_pos.split(",")[:2])
+            except ValueError:
+                pass
+        elif oi.get("position"):
+            px, py = oi["position"]
+        posx_spin = Gtk.SpinButton(
+            adjustment=Gtk.Adjustment(value=px, lower=-32768, upper=32768,
+                                      step_increment=1))
+        posy_spin = Gtk.SpinButton(
+            adjustment=Gtk.Adjustment(value=py, lower=-32768, upper=32768,
+                                      step_increment=1))
+
+        tr_combo = Gtk.ComboBoxText()
+        cur_tr = cfg.get_option(sec, "transform") or oi.get("transform") or "normal"
+        tr_values = list(OutputManager.TRANSFORMS)
+        if cur_tr not in tr_values:
+            tr_values.append(cur_tr)
+        for t in tr_values:
+            tr_combo.append_text(t)
+        tr_combo.set_active(tr_values.index(cur_tr))
+
+        # --- live-save helpers (each writes only its own option) ---
+        def _set_warn(level, msg):
+            warn_lbl.remove_css_class("output-warn")
+            warn_lbl.remove_css_class("output-error")
+            if not msg:
+                warn_lbl.set_visible(False)
+                return
+            warn_lbl.set_text(msg)
+            warn_lbl.add_css_class("output-error" if level == "error"
+                                   else "output-warn")
+            warn_lbl.set_visible(True)
+
+        # --- "Confirm Display Changes" auto-revert for resolution / refresh /
+        #     rotation. The applied value is the live one; if the user doesn't
+        #     confirm within the countdown we restore the previous (baseline)
+        #     value. baseline updates only when the user keeps a change.
+        confirm = {
+            "res": res0 or "",
+            "ref": _fmt_refresh(refresh0),
+            "tr": cur_tr,
+            "suppress": False,    # don't prompt for enable/disable toggles
+            "reverting": False,   # guard against re-entrancy while reverting
+            "debounce_id": 0,     # coalesce rapid edits / typing
+        }
+
+        def _cur_res():
+            return (res_combo.get_active_text()
+                    or res_combo.get_child().get_text() or "").strip()
+
+        def _cur_ref():
+            return (ref_combo.get_active_text()
+                    or ref_combo.get_child().get_text() or "").strip()
+
+        def _cur_tr():
+            return tr_combo.get_active_text() or "normal"
+
+        def _confirm_detail():
+            lines = []
+            if sw.get_active() and (
+                    (_cur_res(), _cur_ref()) != (confirm["res"], confirm["ref"])):
+                lines.append(
+                    f"{name}: Mode \u2192 {_mode_human(_cur_res(), _cur_ref())}")
+            if _cur_tr() != (confirm["tr"] or "normal"):
+                lines.append(f"{name}: Rotation \u2192 {_cur_tr()}")
+            return lines
+
+        def _confirm_keep():
+            confirm["res"], confirm["ref"] = _cur_res(), _cur_ref()
+            confirm["tr"] = _cur_tr()
+
+        def _confirm_revert():
+            confirm["reverting"] = True
+            try:
+                st["block"] = True
+                try:
+                    res_combo.get_child().set_text(confirm["res"])
+                    populate_refresh(confirm["res"], confirm["ref"])
+                    tr_txt = confirm["tr"] or "normal"
+                    if tr_txt in tr_values:
+                        tr_combo.set_active(tr_values.index(tr_txt))
+                finally:
+                    st["block"] = False
+                # Restore the config too, so wayfire re-applies the old mode live.
+                if sw.get_active():
+                    rf = _parse_refresh(confirm["ref"])
+                    cfg.set_option(sec, "mode",
+                                   _build_mode(confirm["res"], rf if rf > 0 else 0))
+                cfg.set_option(sec, "transform", confirm["tr"] or "normal")
+                cfg.save()
+                _set_warn("ok", "")
+            finally:
+                # Always clear the guard, or the prompt would only ever fire once.
+                confirm["reverting"] = False
+
+        def _show_confirm():
+            s._confirm_sources.discard(confirm["debounce_id"])
+            confirm["debounce_id"] = 0
+            lines = _confirm_detail()
+            active = s._active_confirm
+            if not lines:
+                # Returned to the baseline before the prompt mattered.
+                if active is not None and getattr(active, "owner", None) == sec:
+                    active.close_silent()
+                return False
+            if active is not None and getattr(active, "owner", None) == sec:
+                active.update(lines)
+                return False
+            if active is not None:
+                active.close_silent()
+
+            def _finished():
+                if getattr(s._active_confirm, "owner", None) == sec:
+                    s._active_confirm = None
+
+            dlg = _DisplayConfirmDialog(
+                s.app, seconds=CONFIRM_TIMEOUT_SECONDS, detail_lines=lines,
+                on_keep=_confirm_keep, on_revert=_confirm_revert,
+                on_finished=_finished)
+            dlg.owner = sec
+            s._active_confirm = dlg
+            dlg.present()
+            return False
+
+        def maybe_confirm():
+            if st["block"] or confirm["reverting"] or confirm["suppress"]:
+                return
+            if not is_connected:
+                # Not a live output: writing config can't blank a screen,
+                # so there's nothing to confirm/revert.
+                return
+            if confirm["debounce_id"]:
+                GLib.source_remove(confirm["debounce_id"])
+                s._confirm_sources.discard(confirm["debounce_id"])
+            confirm["debounce_id"] = GLib.timeout_add(600, _show_confirm)
+            s._confirm_sources.add(confirm["debounce_id"])
+
+        def write_mode(*_):
+            if st["block"]:
+                return
+            if not sw.get_active():
+                _set_warn("ok", "")
+                cfg.set_option(sec, "mode", "off")
+                cfg.save()
+                return
+            res = (res_combo.get_active_text()
+                   or res_combo.get_child().get_text() or "").strip()
+            if res == "":
+                # Mid-edit / incomplete: don't touch the saved mode.
+                _set_warn("ok", "")
+                return
+            ref_text = (ref_combo.get_active_text()
+                        or ref_combo.get_child().get_text() or "").strip()
+            if ref_text == "":
+                rf = 0
+            else:
+                rf = _parse_refresh(ref_text)
+                if rf <= 0:
+                    rf = -1  # typed but unparseable -> flagged invalid
+            level, msg = OutputManager.validate_mode(res, rf, True,
+                                                     oi.get("modes"))
+            _set_warn(level, msg)
+            if level == "error":
+                # Never hand wayfire a malformed/unsupported mode.
+                return
+            cfg.set_option(sec, "mode", _build_mode(res, rf if rf > 0 else 0))
+            cfg.save()
+            maybe_confirm()
+
+        def write_scale(*_):
+            if st["block"]:
+                return
+            cfg.set_option(sec, "scale", f"{scale_spin.get_value():.6f}")
+            cfg.save()
+
+        def write_position(*_):
+            if st["block"]:
+                return
+            cfg.set_option(
+                sec, "position",
+                f"{posx_spin.get_value_as_int()},{posy_spin.get_value_as_int()}")
+            cfg.save()
+
+        def write_transform(*_):
+            if st["block"]:
+                return
+            cfg.set_option(sec, "transform", tr_combo.get_active_text() or "normal")
+            cfg.save()
+            maybe_confirm()
+
+        def on_res_changed(_w):
+            if st["block"]:
+                return
+            r = res_combo.get_active_text() or res_combo.get_child().get_text()
+            r = (r or "").strip()
+            if r in ref_by_res:
+                st["block"] = True
+                populate_refresh(r, ref_combo.get_active_text() or "")
+                st["block"] = False
+            write_mode()
+
+        def on_toggle(_w, _p):
+            for ctl in (res_combo, ref_combo, scale_spin, posx_spin,
+                        posy_spin, tr_combo):
+                ctl.set_sensitive(sw.get_active())
+            # Turning an output on/off isn't a resolution/refresh/rotation
+            # change, so it shouldn't raise the confirm prompt.
+            confirm["suppress"] = True
+            try:
+                write_mode()
+            finally:
+                confirm["suppress"] = False
+
+        # --- layout the controls ---
+        def add_row(label, widget):
+            row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+            row.add_css_class("option-row")
+            lab = Gtk.Label(label=label)
+            lab.set_size_request(LABEL_W, -1)
+            lab.set_xalign(0)
+            lab.add_css_class("option-label")
+            row.append(lab)
+            widget.set_hexpand(True)
+            row.append(widget)
+            box.append(row)
+
+        add_row("Resolution", res_combo)
+        add_row("Refresh rate", ref_combo)
+        add_row("Scale", scale_spin)
+        pos_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        pos_box.append(Gtk.Label(label="X"))
+        pos_box.append(posx_spin)
+        pos_box.append(Gtk.Label(label="Y"))
+        pos_box.append(posy_spin)
+        add_row("Position", pos_box)
+        add_row("Rotation", tr_combo)
+
+        warn_lbl = Gtk.Label()
+        warn_lbl.set_wrap(True)
+        warn_lbl.set_xalign(0)
+        warn_lbl.set_visible(False)
+        warn_lbl.set_margin_start(8)
+        box.append(warn_lbl)
+
+        for ctl in (res_combo, ref_combo, scale_spin, posx_spin, posy_spin,
+                    tr_combo):
+            ctl.set_sensitive(enabled0 or is_primary)
+        sw.set_active(enabled0 or is_primary)
+        if is_primary:
+            sw.set_sensitive(False)
+            sw.set_tooltip_text(
+                "WCM is running on this display, so it can't be switched off "
+                "\u2014 that would blank your screen. Move WCM to another "
+                "display to turn this one off.")
+
+        # connect after initial values are set, then unblock
+        sw.connect("notify::active", on_toggle)
+        res_combo.connect("changed", on_res_changed)
+        ref_combo.connect("changed", write_mode)
+        scale_spin.connect("value-changed", write_scale)
+        posx_spin.connect("value-changed", write_position)
+        posy_spin.connect("value-changed", write_position)
+        tr_combo.connect("changed", write_transform)
+        st["block"] = False
+
+        return fr
+
+    def _confirm_remove(s, name):
+        cfg = s.app.config
+        dlg = Gtk.AlertDialog()
+        dlg.set_modal(True)
+        dlg.set_message(f"Remove output \u201c{name}\u201d?")
+        dlg.set_detail(
+            "This deletes its [output:" + name + "] section from "
+            "wayfire.ini. If the monitor is still connected it will reappear "
+            "unconfigured."
+        )
+        dlg.set_buttons(["Cancel", "Remove"])
+        dlg.set_cancel_button(0)
+        dlg.set_default_button(0)
+
+        def on_resp(d, res):
+            try:
+                idx = d.choose_finish(res)
+            except GLib.Error:
+                return  # dismissed
+            if idx == 1:
+                s.app.config.remove_section(OutputManager.section_name(name))
+                s.app.config.save()
+                s.reload()
+
+        dlg.choose(s.app, None, on_resp)
+
+    def _build_add_row(s, cfg):
+        row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        row.set_margin_top(8)
+        lab = Gtk.Label(label="Add output")
+        lab.set_size_request(LABEL_W, -1)
+        lab.set_xalign(0)
+        lab.add_css_class("option-label")
+        row.append(lab)
+        ent = Gtk.Entry()
+        ent.set_placeholder_text("name from wlr-randr, e.g. HDMI-A-1")
+        ent.set_hexpand(True)
+        row.append(ent)
+        btn = Gtk.Button.new_from_icon_name("list-add")
+        btn.add_css_class("add-btn")
+        row.append(btn)
+
+        def do_add(*_):
+            nm = ent.get_text().strip()
+            if not nm:
+                return
+            sec = OutputManager.section_name(nm)
+            if cfg.get_option(sec, "mode") is None:
+                cfg.set_option(sec, "mode", "default")
+                cfg.save()
+            s.reload()
+
+        btn.connect("clicked", do_add)
+        ent.connect("activate", do_add)
+        return row
+
+
 class WCM(Gtk.ApplicationWindow):
     def __init__(s, app):
         super().__init__(application=app, title="Wayfire Config Manager")
@@ -1580,6 +2380,13 @@ class WCM(Gtk.ApplicationWindow):
         light_icon.set_tooltip_text("Light")
         theme_box.append(light_icon)
         ml.append(theme_box)
+        disp_btn = s._make_button("DISPLAY", "preferences-desktop-display")
+        disp_btn.add_css_class("action-btn")
+        disp_btn.set_margin_start(14)
+        disp_btn.set_margin_end(14)
+        disp_btn.set_margin_bottom(8)
+        disp_btn.connect("clicked", s.open_display)
+        ml.append(disp_btn)
         ob = s._make_button("Configure Outputs", "video-display")
         ob.add_css_class("action-btn")
         ob.set_margin_start(14)
@@ -1670,6 +2477,51 @@ class WCM(Gtk.ApplicationWindow):
         bb.connect("clicked", lambda w: s.open_page(None))
         pl.append(bb)
         s.left_stack.add_named(pl, "plugin")
+
+        # --- DISPLAY left panel ---
+        dlp = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        dtitle = Gtk.Label()
+        dtitle.set_markup("<span size='12000'><b>DISPLAY</b></span>")
+        dtitle.set_halign(Gtk.Align.CENTER)
+        dtitle.set_margin_top(50)
+        dtitle.set_margin_bottom(20)
+        dtitle.add_css_class("plugin-title")
+        dlp.append(dtitle)
+        ddesc = Gtk.Label()
+        ddesc.set_wrap(True)
+        ddesc.set_max_width_chars(24)
+        ddesc.set_justify(Gtk.Justification.CENTER)
+        ddesc.set_halign(Gtk.Align.CENTER)
+        ddesc.set_margin_start(12)
+        ddesc.set_margin_end(12)
+        ddesc.set_text(
+            "Set resolution, refresh rate, scale, position and rotation for "
+            "each monitor, or turn outputs on and off. Changes are written "
+            "to wayfire.ini."
+        )
+        ddesc.add_css_class("plugin-desc")
+        dlp.append(ddesc)
+        dsp = Gtk.Box()
+        dsp.set_vexpand(True)
+        dlp.append(dsp)
+        drb = s._make_button("Detect Outputs", "view-refresh")
+        drb.add_css_class("action-btn")
+        drb.add_css_class("back-btn")
+        drb.set_margin_start(14)
+        drb.set_margin_end(14)
+        drb.set_margin_bottom(8)
+        drb.connect("clicked",
+                    lambda w: s.display_page and s.display_page.reload())
+        dlp.append(drb)
+        dbb = s._make_button("Back", "go-previous")
+        dbb.add_css_class("action-btn")
+        dbb.add_css_class("back-btn")
+        dbb.set_margin_start(14)
+        dbb.set_margin_end(14)
+        dbb.set_margin_bottom(14)
+        dbb.connect("clicked", lambda w: s.open_page(None))
+        dlp.append(dbb)
+        s.left_stack.add_named(dlp, "display")
         gb.append(s.left_stack)
         s.main_stack = Gtk.Stack()
         s.main_stack.set_transition_type(Gtk.StackTransitionType.SLIDE_LEFT_RIGHT)
@@ -1681,6 +2533,7 @@ class WCM(Gtk.ApplicationWindow):
         gb.append(s.main_stack)
         s.set_child(gb)
         s.plugin_page = None
+        s.display_page = None
 
     def _make_button(s, text, icon):
         btn = Gtk.Button()
@@ -1731,6 +2584,18 @@ class WCM(Gtk.ApplicationWindow):
             s.main_stack.set_visible_child_name("main")
             s.left_stack.set_visible_child_name("main")
             s.current_plugin = None
+
+    def open_display(s, btn=None):
+        s.current_plugin = None
+        if s.display_page is not None:
+            try:
+                s.main_stack.remove(s.display_page)
+            except Exception:
+                pass
+        s.display_page = DisplayPage(s)
+        s.main_stack.add_named(s.display_page, "display")
+        s.main_stack.set_visible_child_name("display")
+        s.left_stack.set_visible_child_name("display")
 
     def set_plugin_enabled(s, plg, en):
         if plg.is_core_plugin or plg.type == PluginType.WF_SHELL:
@@ -1812,25 +2677,20 @@ class WCM(Gtk.ApplicationWindow):
     def _on_master_save(s, btn):
         def do(name):
             try:
-                # Save both wayfire and wf-shell options into one preset
-                s.preset_mgr.save_master_preset(name, s.config)
-                # Merge wf-shell options into the same preset file
-                ws_opts = s.wf_shell_config.get_all_options()
-                if ws_opts:
-                    path = s.preset_mgr._master_path(
-                        s.preset_mgr._sanitize(name))
-                    preset = WayfireConfigFile(path)
-                    for section, opts in ws_opts.items():
-                        for key, value in opts.items():
-                            preset.set_option(section, key, value)
-                    preset.save()
+                # Snapshot the whole config file(s) verbatim. Copying the
+                # entire file preserves the multi-line `plugins = \ ...`
+                # list and all formatting, so loading the preset later can
+                # never blank out the enabled-plugins list.
+                s.preset_mgr.save_master_preset_file(
+                    name, s.config.path, s.wf_shell_config.path)
                 s._refresh_master_presets()
-                # Select the one just saved
+                # Select the one just saved (stored under its sanitized name)
+                saved = s.preset_mgr._sanitize(name)
                 model = s._master_combo.get_model()
                 it = model.get_iter_first()
                 i = 0
                 while it:
-                    if model.get_value(it, 0) == name:
+                    if model.get_value(it, 0) == saved:
                         s._master_combo.set_active(i)
                         break
                     it = model.iter_next(it)
@@ -1844,20 +2704,12 @@ class WCM(Gtk.ApplicationWindow):
         if not name:
             return
         try:
-            # Build set of wf-shell section names so we route correctly
-            ws_sections = {p.name for p in s.plugins
-                           if p.type == PluginType.WF_SHELL}
-
-            path = s.preset_mgr._master_path(name)
-            preset = WayfireConfigFile(path)
-            for section in preset.get_sections():
-                opts = preset.get_section_options(section)
-                target = (s.wf_shell_config if section in ws_sections
-                          else s.config)
-                for key, value in opts.items():
-                    target.set_option(section, key, value)
-            s.config.save()
-            s.wf_shell_config.save()
+            # Copy the stored snapshot back over the live config file(s)
+            # verbatim, then reload the in-memory config from disk.
+            s.preset_mgr.load_master_preset_file(
+                name, s.config.path, s.wf_shell_config.path)
+            s.config = WayfireConfigFile(s.config.path)
+            s.wf_shell_config = WayfireConfigFile(s.wf_shell_config.path)
 
             # Refresh enabled states
             enabled = s.config.get_enabled_plugins()
