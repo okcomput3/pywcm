@@ -8,6 +8,55 @@ gi.require_version("Gtk", "4.0")
 gi.require_version("Gdk", "4.0")
 import sys, os, subprocess, glob, shutil, traceback, re
 from gi.repository import Gtk, Gdk, GLib, Gio, GdkPixbuf, Pango
+
+
+def _userns_blocked():
+    """Return True if unprivileged user namespaces look disabled, which is
+    what makes WebKitGTK's bubblewrap (bwrap) sandbox fail with
+    'setting up uid map: permission denied'."""
+    try:
+        with open("/proc/sys/kernel/unprivileged_userns_clone") as f:
+            if f.read().strip() == "0":
+                return True
+    except Exception:
+        pass
+    try:
+        # Ubuntu 23.10+ restricts unprivileged userns via AppArmor.
+        with open("/proc/sys/kernel/apparmor_restrict_unprivileged_userns") as f:
+            if f.read().strip() == "1":
+                return True
+    except Exception:
+        pass
+    return False
+
+
+# WebKitGTK (GTK4 build) is optional; used to show wiki pages inside the
+# side panel. If it isn't installed we fall back to an external browser.
+try:
+    gi.require_version("WebKit", "6.0")
+    from gi.repository import WebKit
+
+    _HAVE_WEBKIT = True
+    # WebKitGTK 6.0 always sandboxes its web process with bwrap, which needs
+    # unprivileged user namespaces. Where those are blocked (many containers,
+    # hardened kernels, or Ubuntu's AppArmor userns restriction) the web
+    # process dies with "bwrap: setting up uid map: permission denied" and the
+    # page never loads. The set_sandbox_enabled() API was removed in 6.0, so
+    # the only way to recover is this env var, which must be set before the
+    # first web process starts. Only do it when userns is actually blocked, so
+    # the sandbox stays enabled on systems where it works.
+    if _userns_blocked():
+        os.environ.setdefault("WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS", "1")
+    # On some Wayland compositors (Wayfire among them) WebKitGTK's DMABUF
+    # renderer triggers "Error 71 (Protocol error)" / internallyFailedLoad
+    # failures. Disabling it avoids that whole class of crashes; it's only a
+    # rendering-path change and is a no-op where DMABUF already works. Set via
+    # setdefault so anyone who needs the accelerated path can override it.
+    os.environ.setdefault("WEBKIT_DISABLE_DMABUF_RENDERER", "1")
+except Exception:
+    WebKit = None
+    _HAVE_WEBKIT = False
+
 from config_backend import WayfireConfigFile, PresetManager, OutputManager
 from metadata import (
     load_all_metadata,
@@ -57,6 +106,16 @@ def _make_css(dark=True):
         dlg_hdr = "rgba(240,236,228,0.98)"
         left_bdr = "rgba(176,120,24,0.10)"
         tab_bg = "rgba(245,240,232,0.80)"
+    if dark:
+        ini_bg, ini_fg, ini_accent, ini_gutter = "#090b14", "#d7d3cb", "#5fd6cb", "#3f4658"
+        ini_border, ini_hdr_border = "rgba(95,214,203,0.16)", "rgba(95,214,203,0.14)"
+        ini_grad_a, ini_grad_b = "rgba(95,214,203,0.06)", "rgba(9,11,20,0.0)"
+        ini_hot, ini_hot_a, ini_hot_b = "#5fd6cb", "rgba(95,214,203,0.40)", "rgba(95,214,203,0.13)"
+    else:
+        ini_bg, ini_fg, ini_accent, ini_gutter = "#f3efe7", "#2a2520", "#2a8a80", "#a39a8c"
+        ini_border, ini_hdr_border = "rgba(42,138,128,0.22)", "rgba(42,138,128,0.20)"
+        ini_grad_a, ini_grad_b = "rgba(42,138,128,0.08)", "rgba(243,239,231,0.0)"
+        ini_hot, ini_hot_a, ini_hot_b = "#2a8a80", "rgba(42,138,128,0.30)", "rgba(42,138,128,0.12)"
     return f"""
 @define-color bg_deep {bg_deep}; @define-color bg_panel {bg_panel}; @define-color bg_card {bg_card};
 @define-color bg_input {bg_input}; @define-color bg_input_focus {bg_input_f};
@@ -192,6 +251,8 @@ stack {{ transition-duration: 450ms; }}
 .grab-btn:hover {{ background-color: rgba({at},0.12); border-color: rgba({at},0.45); }}
 .add-btn {{ background-color: rgba({at},0.05); border: 1px solid rgba({at},0.16); color: @success; transition: all 300ms ease; }}
 .add-btn:hover {{ background-color: rgba({at},0.12); border-color: rgba({at},0.45); }}
+.fab-add {{ background-color: {bg_card}; border: 1px solid rgba({at},0.30); border-radius: 11px; color: @success; min-width: 40px; min-height: 40px; padding: 4px; margin: 12px; box-shadow: 0 4px 16px rgba(0,0,0,0.35); transition: all 300ms ease; }}
+.fab-add:hover {{ background-color: rgba({at},0.16); border-color: rgba({at},0.60); }}
 .remove-btn {{ background-color: rgba({ar},0.03); border: 1px solid rgba({ar},0.10); color: @danger; min-width: 30px; transition: all 300ms ease; }}
 .remove-btn:hover {{ background-color: rgba({ar},0.10); border-color: rgba({ar},0.40); }}
 .run-btn {{ background-color: rgba({at},0.03); border: 1px solid rgba({at},0.10); color: @success; transition: all 300ms ease; }}
@@ -241,6 +302,28 @@ window.confirm-window {{ background-color: {panel_bg}; }}
 .confirm-keep:hover {{ background-color: rgba({ab},0.34); border-color: @amber; color: @text_primary; }}
 .confirm-close {{ background-color: transparent; border-color: transparent; padding: 2px 8px; }}
 .confirm-close:hover {{ background-color: rgba({ab},0.14); border-color: transparent; }}
+
+.ini-panel {{ background-color: {ini_bg}; border-left: 1px solid {ini_border}; }}
+.ini-header {{ padding: 10px 14px; border-bottom: 1px solid {ini_hdr_border}; background-image: linear-gradient(180deg, {ini_grad_a}, {ini_grad_b}); }}
+.ini-dot {{ color: {ini_accent}; font-size: 0.7em; animation: ini-pulse 1.7s ease-in-out infinite; }}
+.ini-title {{ color: {ini_fg}; font-family: monospace; font-weight: 600; font-size: 0.95em; letter-spacing: 0.3px; }}
+.ini-live {{ color: {ini_accent}; font-family: monospace; font-size: 0.66em; font-weight: 700; letter-spacing: 2px; opacity: 0.6; }}
+.ini-scroll {{ background-color: transparent; }}
+.ini-body {{ padding: 8px 0 44px 0; font-family: monospace; }}
+.ini-line {{ padding: 1px 12px 1px 6px; border-left: 2px solid transparent; }}
+.ini-gutter {{ color: {ini_gutter}; font-family: monospace; font-size: 0.82em; margin-right: 10px; }}
+.ini-text {{ font-family: monospace; font-size: 0.86em; }}
+@keyframes ini-pulse {{ 0% {{ opacity: 0.3; }} 50% {{ opacity: 1; }} 100% {{ opacity: 0.3; }} }}
+@keyframes ini-hot {{ 0% {{ background-color: {ini_hot_a}; }} 60% {{ background-color: {ini_hot_b}; }} 100% {{ background-color: transparent; }} }}
+.ini-hot {{ border-left: 2px solid {ini_hot}; animation: ini-hot 1.35s cubic-bezier(0.22,1,0.36,1); }}
+.wiki-back {{ background-color: rgba({at},0.07); border: 1px solid rgba({at},0.20); color: @teal; border-radius: 8px; padding: 3px 10px; font-weight: 600; }}
+.wiki-back:hover {{ background-color: rgba({at},0.15); border-color: rgba({at},0.48); }}
+.wiki-nav {{ background-color: transparent; border: 1px solid rgba({at},0.12); color: @text_secondary; border-radius: 8px; min-width: 26px; min-height: 26px; padding: 2px; }}
+.wiki-nav:hover {{ background-color: rgba({at},0.10); color: @teal; border-color: rgba({at},0.35); }}
+.wiki-fallback {{ color: @text_secondary; }}
+.side-rail {{ background-color: rgba({ab},0.02); border-left: 1px solid rgba({at},0.10); }}
+.side-toggle {{ min-width: 26px; min-height: 30px; padding: 4px 3px; font-size: 1.15em; font-weight: 700; color: @text_secondary; }}
+.side-toggle:hover {{ background-color: rgba({at},0.12); color: @teal; border-color: rgba({at},0.40); }}
 """
 
 
@@ -248,7 +331,8 @@ _css_provider = None
 
 
 def _apply_theme(dark=True):
-    global _css_provider
+    global _css_provider, _INI_DARK
+    _INI_DARK = dark
     display = Gdk.Display.get_default()
     if _css_provider:
         Gtk.StyleContext.remove_provider_for_display(display, _css_provider)
@@ -257,6 +341,16 @@ def _apply_theme(dark=True):
     Gtk.StyleContext.add_provider_for_display(
         display, _css_provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION + 100
     )
+    # Make the embedded wiki/webpage follow the same light/dark choice.
+    # WebKitGTK maps the GTK "prefer dark" setting onto the page's
+    # `prefers-color-scheme`, so flipping it here re-themes the webpage live
+    # (sites that honour the media query, like the Wayfire wiki, switch too).
+    settings = Gtk.Settings.get_default()
+    if settings is not None:
+        try:
+            settings.set_property("gtk-application-prefer-dark-theme", dark)
+        except Exception:
+            pass
 
 
 def parse_color(color_str):
@@ -945,11 +1039,11 @@ class PluginPage(Gtk.Notebook):
         s.connect("switch-page", s._on_ts)
         s._lt = 0
         s._br = False
+        s._rules_done = False
         for g in plg.option_groups:
             if g.type != OptionType.GROUP or g.hidden:
                 continue
-            sc = Gtk.ScrolledWindow()
-            sc.set_vexpand(True)
+            s._pending_add = None
             bx = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
             bx.set_margin_start(10)
             bx.set_margin_end(10)
@@ -970,8 +1064,49 @@ class PluginPage(Gtk.Notebook):
                 except Exception as e:
                     bx.append(Gtk.Label(label=f"\u26a0 {o.name}: {e}"))
                     traceback.print_exc()
-            sc.set_child(bx)
-            s.append_page(sc, Gtk.Label(label=g.name or "General"))
+            s._append_page(g.name or "General", bx, s._pending_add)
+        # Window-rules-type plugins (incl. the IPC interface) may have no
+        # metadata options at all — inject an editable rules list so they
+        # still get an add (+) button, like autostart.
+        if s._is_winrules(plg) and not s._rules_done:
+            s._pending_add = None
+            bx = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+            bx.set_margin_start(10)
+            bx.set_margin_end(10)
+            bx.set_margin_top(10)
+            bx.set_margin_bottom(10)
+            so = cfg.get_section_options(plg.name)
+            bx.append(s._make_winrules_box(cfg, plg, so, "rule_"))
+            s._append_page("Rules", bx, s._pending_add)
+
+    @staticmethod
+    def _is_winrules(plg):
+        n = (plg.name or "").lower()
+        d = (plg.disp_name or "").lower()
+        return (
+            "window-rule" in n
+            or n in ("ipc-rules", "window-rules", "window-rules-ipc")
+            or "window rule" in d
+        )
+
+    def _append_page(s, name, bx, pending_add):
+        sc = Gtk.ScrolledWindow()
+        sc.set_vexpand(True)
+        sc.set_child(bx)
+        if pending_add is not None:
+            ov = Gtk.Overlay()
+            ov.set_vexpand(True)
+            ov.set_child(sc)
+            fab = Gtk.Button.new_from_icon_name("list-add")
+            fab.add_css_class("fab-add")
+            fab.set_halign(Gtk.Align.END)
+            fab.set_valign(Gtk.Align.END)
+            fab.set_tooltip_text("Add")
+            fab.connect("clicked", lambda w, f=pending_add: f())
+            ov.add_overlay(fab)
+            s.append_page(ov, Gtk.Label(label=name))
+        else:
+            s.append_page(sc, Gtk.Label(label=name))
 
     def _on_ts(s, nb, pg, pn):
         if pn > s._lt:
@@ -1005,6 +1140,8 @@ class PluginPage(Gtk.Notebook):
                 return None
             s._br = True
             return s._make_bindings(opt, cfg, plg, so)
+        if plg.name == "window-rules" or opt.name == "rules":
+            return s._make_winrules(opt, cfg, plg, so)
         fr = Gtk.Frame(label=opt.disp_name or opt.name)
         bx = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
         bx.set_margin_start(8)
@@ -1023,14 +1160,7 @@ class PluginPage(Gtk.Notebook):
         for k, v in so.items():
             if k != "autostart_wf_shell":
                 bx.append(s._make_as_row(k, v, cfg, plg, bx))
-        ab = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
-        btn = Gtk.Button.new_from_icon_name("list-add")
-        btn.add_css_class("add-btn")
-        btn.set_halign(Gtk.Align.END)
-        btn.connect("clicked", lambda w: s._add_as(cfg, plg, bx))
-        ab.append(btn)
-        ab.set_halign(Gtk.Align.END)
-        bx.append(ab)
+        s._pending_add = lambda: s._add_as(cfg, plg, bx)
         return bx
 
     def _make_as_row(s, k, v, cfg, plg, pb):
@@ -1062,18 +1192,52 @@ class PluginPage(Gtk.Notebook):
         cfg.set_option(plg.name, k, "")
         cfg.save()
         r = s._make_as_row(k, "", cfg, plg, bx)
-        c = bx.get_first_child()
-        last = None
-        while c:
-            last = c
-            c = c.get_next_sibling()
-        if last:
-            bx.insert_child_after(r, None)
-            bx.reorder_child_after(
-                r, last.get_prev_sibling() if last.get_prev_sibling() else None
-            )
-        else:
-            bx.append(r)
+        bx.append(r)
+
+    def _make_winrules(s, opt, cfg, plg, so):
+        pfx = "rule_"
+        if opt.entries:
+            for e in opt.entries:
+                if e.prefix:
+                    pfx = e.prefix
+                    break
+        return s._make_winrules_box(cfg, plg, so, pfx)
+
+    def _make_winrules_box(s, cfg, plg, so, pfx):
+        bx = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        for k, v in so.items():
+            if k.startswith(pfx):
+                bx.append(s._make_wr_row(k, v, cfg, plg, bx))
+        s._pending_add = lambda: s._add_wr(cfg, plg, bx, pfx)
+        s._rules_done = True
+        return bx
+
+    def _make_wr_row(s, k, v, cfg, plg, pb):
+        r = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
+        e = Gtk.Entry()
+        e.set_text(v)
+        e.set_hexpand(True)
+        e.set_placeholder_text(
+            'on created if app_id is "foo" then maximize'
+        )
+        e.connect("changed", lambda w, kk=k: s._so(cfg, plg, kk, w.get_text()))
+        r.append(e)
+        rm = Gtk.Button.new_from_icon_name("list-remove")
+        rm.add_css_class("remove-btn")
+        rm.connect("clicked", lambda w, kk=k, rr=r: s._rm_row(cfg, plg, kk, rr, pb))
+        r.append(rm)
+        return r
+
+    def _add_wr(s, cfg, plg, bx, pfx):
+        so = cfg.get_section_options(plg.name)
+        i = 0
+        while f"{pfx}{i}" in so:
+            i += 1
+        k = f"{pfx}{i}"
+        cfg.set_option(plg.name, k, "")
+        cfg.save()
+        r = s._make_wr_row(k, "", cfg, plg, bx)
+        bx.append(r)
 
     def _make_bindings(s, opt, cfg, plg, so):
         bx = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
@@ -1085,16 +1249,7 @@ class PluginPage(Gtk.Notebook):
                     cn.append(n)
         for c in sorted(cn):
             bx.append(s._make_bw(c, cfg, plg, so, bx))
-        ab = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
-        ab.set_hexpand(True)
-        btn = Gtk.Button.new_from_icon_name("list-add")
-        btn.add_css_class("add-btn")
-        btn.set_halign(Gtk.Align.END)
-        btn.connect("clicked", lambda w: s._add_bind(cfg, plg, bx))
-        ab.append(btn)
-        ab.set_halign(Gtk.Align.END)
-        ab.set_margin_top(6)
-        bx.append(ab)
+        s._pending_add = lambda: s._add_bind(cfg, plg, bx)
         return bx
 
     def _make_bw(s, cn, cfg, plg, so, pb):
@@ -1211,17 +1366,7 @@ class PluginPage(Gtk.Notebook):
         cfg.save()
         so = cfg.get_section_options(plg.name)
         w = s._make_bw(n, cfg, plg, so, bx)
-        c = bx.get_first_child()
-        last = None
-        while c:
-            last = c
-            c = c.get_next_sibling()
-        if last:
-            bx.insert_child_after(
-                w, last.get_prev_sibling() if last.get_prev_sibling() else None
-            )
-        else:
-            bx.append(w)
+        bx.append(w)
 
     def _add_simple_row(s, bx, k, v, cfg, plg):
         r = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
@@ -2236,11 +2381,557 @@ class DisplayPage(Gtk.ScrolledWindow):
         return row
 
 
+# Colors for the live .ini view (kept constant so the panel reads like a
+# terminal regardless of the light/dark UI theme).
+# Syntax-highlight colours for the live .ini editor, per theme. `_markup`
+# reads whichever palette matches the active theme so the editor recolours
+# (not just its chrome) when the light/dark switch is flipped.
+_INI_PALETTE = {
+    True: {  # dark
+        "section": "#f0b84d", "key": "#5fd6cb", "eq": "#5a6172",
+        "val": "#d7d3cb", "num": "#c9a9e6", "bool": "#7fd1a6",
+        "comment": "#5a6172",
+    },
+    False: {  # light
+        "section": "#b07818", "key": "#1f8f86", "eq": "#9a948c",
+        "val": "#2a2520", "num": "#7a4fb0", "bool": "#2f8f5a",
+        "comment": "#9a948c",
+    },
+}
+_INI_DARK = True
+
+
+def _ini_colors():
+    return _INI_PALETTE[_INI_DARK]
+
+# Shared width for the right-hand side panel so the editor and the embedded
+# wiki/webpage render at exactly the same size (the panel must not resize when
+# it switches from the .ini editor to a wiki page).
+SIDE_PANEL_W = 800
+# The live .ini editor is much narrower than a rendered web page, so it gets its
+# own (smaller) width. The panel grows the window by whichever of these matches
+# the view currently shown (editor vs wiki).
+SIDE_INIPANEL_W = 400
+
+
+class LiveIniPanel(Gtk.Box):
+    """A live, syntax-highlighted view of the .ini file on disk.
+
+    Whenever a config save fires, the panel re-renders and the lines that
+    changed since the previous render flash with a glow, then it scrolls to
+    the first change — so edits look like they're being written into the
+    file in real time.
+    """
+
+    def __init__(s):
+        super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=0)
+        s.add_css_class("ini-panel")
+        s.set_size_request(SIDE_INIPANEL_W, -1)
+        s.set_hexpand(False)
+
+        hdr = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        hdr.add_css_class("ini-header")
+        dot = Gtk.Label(label="\u25cf")
+        dot.add_css_class("ini-dot")
+        hdr.append(dot)
+        s._title = Gtk.Label(label="wayfire.ini")
+        s._title.add_css_class("ini-title")
+        s._title.set_xalign(0)
+        s._title.set_hexpand(True)
+        s._title.set_ellipsize(Pango.EllipsizeMode.MIDDLE)
+        hdr.append(s._title)
+        live = Gtk.Label(label="LIVE")
+        live.add_css_class("ini-live")
+        hdr.append(live)
+        s.append(hdr)
+
+        s._scroll = Gtk.ScrolledWindow()
+        s._scroll.set_vexpand(True)
+        s._scroll.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
+        s._scroll.add_css_class("ini-scroll")
+        s._list = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
+        s._list.add_css_class("ini-body")
+        s._scroll.set_child(s._list)
+        s.append(s._scroll)
+
+        s._prev = {}
+        s._first = True
+        s._path = None
+        s._anim_id = 0
+        s._cfg = None
+
+    def restyle(s):
+        """Re-render with the current theme palette (no change-flash)."""
+        if s._cfg is not None:
+            s.show(s._cfg)
+
+    def show(s, cfg):
+        if cfg is None:
+            return
+        s._cfg = cfg
+        path = getattr(cfg, "path", None)
+        s._title.set_text(os.path.basename(path) if path else "config.ini")
+        file_changed = path != s._path
+        s._path = path
+        suppress = s._first or file_changed
+
+        cur = {}
+        for e in cfg.entries:
+            if e.kind == "option":
+                cur[(e.section, e.key)] = e.value
+
+        c = s._list.get_first_child()
+        while c:
+            nxt = c.get_next_sibling()
+            s._list.remove(c)
+            c = nxt
+
+        first_hot = None
+        first_lbl = None
+        ln = 0
+        for e in cfg.entries:
+            ln += 1
+            hot = False
+            if not suppress and e.kind == "option":
+                kk = (e.section, e.key)
+                if kk not in s._prev or s._prev[kk] != e.value:
+                    hot = True
+            row, lbl = s._make_line(ln, e, hot)
+            s._list.append(row)
+            if hot and first_hot is None:
+                first_hot = row
+                first_lbl = lbl
+
+        s._prev = cur
+        s._first = False
+        if first_hot is not None:
+            GLib.timeout_add(
+                70, lambda r=first_hot, l=first_lbl: s._fly_to(r, l)
+            )
+
+    def _make_line(s, ln, e, hot):
+        row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=0)
+        row.add_css_class("ini-line")
+        if hot:
+            row.add_css_class("ini-hot")
+        num = Gtk.Label(label=str(ln))
+        num.add_css_class("ini-gutter")
+        num.set_xalign(1.0)
+        num.set_width_chars(3)
+        row.append(num)
+        txt = Gtk.Label()
+        txt.set_xalign(0)
+        txt.set_hexpand(True)
+        txt.set_wrap(False)
+        # No ellipsis: long lines keep their full width so the panel can
+        # scroll horizontally to reveal the part being edited.
+        txt.set_ellipsize(Pango.EllipsizeMode.NONE)
+        txt.set_use_markup(True)
+        txt.set_markup(s._markup(e))
+        txt.add_css_class("ini-text")
+        row.append(txt)
+        return row, txt
+
+    def _markup(s, e):
+        esc = GLib.markup_escape_text
+        c = _ini_colors()
+        if e.kind == "section":
+            return (
+                f"<span foreground='{c['section']}' weight='bold'>"
+                f"[{esc(e.section or '')}]</span>"
+            )
+        if e.kind == "comment":
+            return f"<span foreground='{c['comment']}'>{esc(e.text.rstrip())}</span>"
+        if e.kind == "option":
+            k = esc(e.key or "")
+            v = str(e.value)
+            vlow = v.strip().lower()
+            if vlow in ("true", "false"):
+                vc = c["bool"]
+            else:
+                vc = c["val"]
+                try:
+                    float(v.strip())
+                    vc = c["num"]
+                except ValueError:
+                    pass
+            return (
+                f"<span foreground='{c['key']}'>{k}</span>"
+                f"<span foreground='{c['eq']}'> = </span>"
+                f"<span foreground='{vc}'>{esc(v)}</span>"
+            )
+        return " "
+
+    def _fly_to(s, row, lbl):
+        """Compute scroll targets (down to the line, across to reveal the
+        edited part of a long line) and animate smoothly to them."""
+        try:
+            vadj = s._scroll.get_vadjustment()
+            hadj = s._scroll.get_hadjustment()
+            vtarget = vadj.get_value()
+            htarget = 0.0
+
+            okr, rr = row.compute_bounds(s._list)
+            if okr:
+                vpage = vadj.get_page_size()
+                vtarget = rr.origin.y - vpage / 3.0
+                vmax = max(0.0, vadj.get_upper() - vpage)
+                vtarget = max(0.0, min(vtarget, vmax))
+
+            if lbl is not None:
+                okl, rl = lbl.compute_bounds(s._list)
+                _mn, nat = lbl.get_preferred_size()
+                if okl and nat is not None:
+                    hpage = hadj.get_page_size()
+                    line_right = rl.origin.x + nat.width + 18
+                    if line_right > hpage:
+                        hmax = max(0.0, hadj.get_upper() - hpage)
+                        htarget = max(0.0, min(line_right - hpage, hmax))
+
+            s._animate_scroll(vtarget, htarget)
+        except Exception:
+            pass
+        return False
+
+    def _animate_scroll(s, vtarget, htarget):
+        vadj = s._scroll.get_vadjustment()
+        hadj = s._scroll.get_hadjustment()
+        v0 = vadj.get_value()
+        h0 = hadj.get_value()
+        if abs(vtarget - v0) < 0.5 and abs(htarget - h0) < 0.5:
+            return
+        if s._anim_id:
+            try:
+                s.remove_tick_callback(s._anim_id)
+            except Exception:
+                pass
+            s._anim_id = 0
+        dur = 520000.0  # microseconds (~0.52s)
+        state = {"start": None}
+
+        def tick(widget, fclock):
+            now = fclock.get_frame_time()
+            if state["start"] is None:
+                state["start"] = now
+            t = min(1.0, (now - state["start"]) / dur)
+            e = 1.0 - pow(1.0 - t, 3)  # ease-out cubic
+            vadj.set_value(v0 + (vtarget - v0) * e)
+            hadj.set_value(h0 + (htarget - h0) * e)
+            if t >= 1.0:
+                s._anim_id = 0
+                return False
+            return True
+
+        s._anim_id = s.add_tick_callback(tick)
+
+
+class WikiView(Gtk.Box):
+    """Shows Wayfire wiki pages inside the side panel, with a button to
+    return to the live .ini editor. Uses an embedded WebKit view when
+    available, otherwise offers to open the page in the default browser.
+    """
+
+    def __init__(s, on_back, open_external):
+        super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=0)
+        s.add_css_class("ini-panel")
+        s.set_size_request(SIDE_PANEL_W, -1)
+        s.set_hexpand(False)
+        s._open_external = open_external
+        s._url = ""
+        s._sandbox_retry = False
+        # WebKitGTK often fails the very first load after the web process starts
+        # ("internallyFailedLoadTimerFired"); a reload then works. We track load
+        # success and silently retry so the page comes up on first open.
+        s._load_ok = False
+        s._load_retries = 0
+        s._load_wd_id = 0
+        s._max_load_retries = 5
+
+        s._web = None
+        if WebKit is not None:
+            try:
+                s._web = WebKit.WebView()
+            except Exception:
+                s._web = None
+
+        hdr = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        hdr.add_css_class("ini-header")
+        editor_btn = Gtk.Button(label="\u2039 Close Help")
+        editor_btn.add_css_class("wiki-back")
+        editor_btn.set_tooltip_text("Back to the WCM")
+        editor_btn.connect("clicked", lambda w: on_back())
+        hdr.append(editor_btn)
+
+        if s._web is not None:
+            s._back = Gtk.Button.new_from_icon_name("go-previous")
+            s._back.add_css_class("wiki-nav")
+            s._back.set_tooltip_text("Back")
+            s._back.set_sensitive(False)
+            s._back.connect("clicked", lambda w: s._web.go_back())
+            hdr.append(s._back)
+            s._fwd = Gtk.Button.new_from_icon_name("go-next")
+            s._fwd.add_css_class("wiki-nav")
+            s._fwd.set_tooltip_text("Forward")
+            s._fwd.set_sensitive(False)
+            s._fwd.connect("clicked", lambda w: s._web.go_forward())
+            hdr.append(s._fwd)
+        else:
+            s._back = s._fwd = None
+
+        s._title = Gtk.Label(label="Wayfire Wiki")
+        s._title.add_css_class("ini-title")
+        s._title.set_xalign(0)
+        s._title.set_hexpand(True)
+        s._title.set_ellipsize(Pango.EllipsizeMode.END)
+        hdr.append(s._title)
+
+        reload_btn = Gtk.Button.new_from_icon_name("view-refresh")
+        reload_btn.add_css_class("wiki-nav")
+        reload_btn.set_tooltip_text("Reload")
+        reload_btn.connect("clicked", lambda w: s.reload())
+        hdr.append(reload_btn)
+
+        ext_btn = Gtk.Button.new_from_icon_name("web-browser")
+        ext_btn.add_css_class("wiki-nav")
+        ext_btn.set_tooltip_text("Open in external browser")
+        ext_btn.connect("clicked", lambda w: s._open_external(s._url) if s._url else None)
+        hdr.append(ext_btn)
+        s.append(hdr)
+
+        if s._web is not None:
+            s._web.set_vexpand(True)
+            s._web.set_hexpand(True)
+            try:
+                s._web.connect("load-changed", s._on_load_changed)
+                s._web.connect("notify::title", s._on_title)
+                s._web.connect("web-process-terminated", s._on_web_crash)
+                s._web.connect("load-failed", s._on_load_failed)
+            except Exception:
+                pass
+            # The WebView and a GTK error page share a stack, so when WebKit
+            # can't load a page (network-process failure, Wayland protocol
+            # error, etc.) the panel shows a usable fallback with a button to
+            # open the page in the system browser, instead of a blank view.
+            s._web_stack = Gtk.Stack()
+            s._web_stack.set_vexpand(True)
+            s._web_stack.set_hexpand(True)
+            s._web_stack.add_named(s._web, "web")
+            s._web_stack.add_named(s._build_error_page(), "error")
+            s._web_stack.set_visible_child_name("web")
+            s.append(s._web_stack)
+        else:
+            box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
+            box.set_vexpand(True)
+            box.set_valign(Gtk.Align.CENTER)
+            box.set_margin_start(18)
+            box.set_margin_end(18)
+            msg = Gtk.Label()
+            msg.set_wrap(True)
+            msg.set_justify(Gtk.Justification.CENTER)
+            msg.add_css_class("wiki-fallback")
+            msg.set_markup(
+                "<b>In-app wiki needs WebKitGTK</b>\n\n"
+                "Install the GTK4 build (e.g. <tt>webkit2gtk-6.0</tt> / "
+                "<tt>webkitgtk-6.0</tt>) to read wiki pages right here. "
+                "For now you can open the page in your browser."
+            )
+            box.append(msg)
+            s._fb_label = Gtk.Label()
+            s._fb_label.set_wrap(True)
+            s._fb_label.set_justify(Gtk.Justification.CENTER)
+            s._fb_label.add_css_class("wiki-fallback")
+            box.append(s._fb_label)
+            ob = Gtk.Button(label="Open in browser")
+            ob.add_css_class("action-btn")
+            ob.set_halign(Gtk.Align.CENTER)
+            ob.connect("clicked", lambda w: s._open_external(s._url) if s._url else None)
+            box.append(ob)
+            s.append(box)
+
+    def do_measure(s, orientation, for_size):
+        # The embedded WebView reports a large "natural" width for web content,
+        # which would otherwise make the side panel render much wider than the
+        # editor. Pin the horizontal measurement to the shared panel width so
+        # the webpage is always exactly the same size the editor was.
+        if orientation == Gtk.Orientation.HORIZONTAL:
+            return (SIDE_PANEL_W, SIDE_PANEL_W, -1, -1)
+        return Gtk.Box.do_measure(s, orientation, for_size)
+
+    def _build_error_page(s):
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
+        box.set_vexpand(True)
+        box.set_valign(Gtk.Align.CENTER)
+        box.set_margin_start(18)
+        box.set_margin_end(18)
+        head = Gtk.Label()
+        head.set_wrap(True)
+        head.set_justify(Gtk.Justification.CENTER)
+        head.add_css_class("wiki-fallback")
+        head.set_markup("<b>This page couldn't be loaded in-app</b>")
+        box.append(head)
+        s._err_label = Gtk.Label()
+        s._err_label.set_wrap(True)
+        s._err_label.set_justify(Gtk.Justification.CENTER)
+        s._err_label.add_css_class("wiki-fallback")
+        s._err_label.set_text(
+            "WebKit couldn't render the page (this is usually a WebKitGTK or "
+            "Wayland issue, not the wiki). You can open it in your browser."
+        )
+        box.append(s._err_label)
+        btns = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        btns.set_halign(Gtk.Align.CENTER)
+        retry = Gtk.Button(label="Retry")
+        retry.add_css_class("wiki-nav")
+        retry.connect("clicked", lambda w: s.reload())
+        btns.append(retry)
+        ob = Gtk.Button(label="Open in browser")
+        ob.add_css_class("action-btn")
+        ob.connect("clicked", lambda w: s._open_external(s._url) if s._url else None)
+        btns.append(ob)
+        box.append(btns)
+        return box
+
+    def _show_web(s):
+        if getattr(s, "_web_stack", None) is not None:
+            s._web_stack.set_visible_child_name("web")
+
+    def _show_error(s, url="", msg=""):
+        if getattr(s, "_err_label", None) is not None:
+            text = ("WebKit couldn't render the page (usually a WebKitGTK or "
+                    "Wayland issue, not the wiki).")
+            if msg:
+                text += f"\n\n{msg}"
+            if url:
+                text += f"\n\n{url}"
+            s._err_label.set_text(text)
+        if getattr(s, "_web_stack", None) is not None:
+            s._web_stack.set_visible_child_name("error")
+
+    def load(s, url):
+        s._url = url
+        s._load_ok = False
+        s._load_retries = 0
+        s._title.set_text("Wayfire Wiki")
+        s._show_web()
+        if s._web is not None:
+            s._web.load_uri(url)
+            s._arm_load_watchdog()
+        elif getattr(s, "_fb_label", None) is not None:
+            s._fb_label.set_text(url)
+
+    def _arm_load_watchdog(s):
+        # Backstop for the case where the first load stalls *silently* (no
+        # load-failed signal). If the page hasn't committed within the timeout,
+        # quietly re-issue the load, a few times, the way a manual reload would.
+        if s._load_wd_id:
+            try:
+                GLib.source_remove(s._load_wd_id)
+            except Exception:
+                pass
+            s._load_wd_id = 0
+
+        def _tick():
+            if s._load_ok or s._web is None or not s._url:
+                s._load_wd_id = 0
+                return False
+            if s._load_retries >= s._max_load_retries:
+                s._load_wd_id = 0
+                return False
+            s._load_retries += 1
+            try:
+                s._show_web()
+                s._web.load_uri(s._url)
+            except Exception:
+                s._load_wd_id = 0
+                return False
+            return True  # keep watching until it commits or we hit the cap
+
+        s._load_wd_id = GLib.timeout_add(1500, _tick)
+
+    def reload(s):
+        s._load_ok = False
+        s._load_retries = 0
+        if s._web is not None:
+            s._show_web()
+            if s._url:
+                s._web.load_uri(s._url)
+            else:
+                s._web.reload()
+            s._arm_load_watchdog()
+        elif s._url:
+            s._open_external(s._url)
+
+    def _on_title(s, web, _p):
+        t = web.get_title()
+        if t:
+            s._title.set_text(t)
+
+    def _on_load_changed(s, web, event):
+        try:
+            if event == WebKit.LoadEvent.STARTED:
+                s._show_web()  # a fresh load clears any previous error page
+            elif event in (WebKit.LoadEvent.COMMITTED, WebKit.LoadEvent.FINISHED):
+                # The page actually started rendering: stop the retry watchdog.
+                s._load_ok = True
+        except Exception:
+            pass
+        try:
+            if s._back is not None:
+                s._back.set_sensitive(web.can_go_back())
+            if s._fwd is not None:
+                s._fwd.set_sensitive(web.can_go_forward())
+        except Exception:
+            pass
+
+    def _on_load_failed(s, web, load_event, failing_uri, error):
+        # Fires for genuine load failures, including the WebKit
+        # "internallyFailedLoadTimerFired" network-process failure. Skip the
+        # cancellations that happen normally during redirects/navigation.
+        msg = ""
+        try:
+            msg = error.message or ""
+        except Exception:
+            pass
+        if "cancel" in msg.lower():
+            return False
+        # The first load after the web process starts frequently fails with an
+        # internal WebKit error; a reload reliably works. Quietly retry a few
+        # times before giving up and showing the error page, so the page comes
+        # up on first open instead of forcing the user to hit reload.
+        if s._load_retries < s._max_load_retries:
+            s._load_retries += 1
+            url = failing_uri or s._url
+            if url and s._web is not None:
+                GLib.timeout_add(
+                    300 * s._load_retries,
+                    lambda: (s._show_web(), s._web.load_uri(url), False)[2])
+                return True  # suppress WebKit's default error page while we retry
+        s._title.set_text("Couldn't load page")
+        s._show_error(failing_uri or s._url, msg)
+        return True  # we showed our own page; suppress WebKit's default one
+
+    def _on_web_crash(s, *_):
+        # bwrap/userns failures surface as a terminated web process. If we
+        # haven't already, disable the sandbox and retry once — the only
+        # recovery path on WebKit 6.0. Otherwise show the fallback page.
+        if not s._sandbox_retry:
+            s._sandbox_retry = True
+            os.environ["WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS"] = "1"
+            if s._url and s._web is not None:
+                GLib.timeout_add(250, lambda: (s._web.load_uri(s._url), False)[1])
+            return False
+        s._title.set_text("Couldn't render the page")
+        s._show_error(s._url, "The WebKit process stopped unexpectedly.")
+        return False
+
+
 class WCM(Gtk.ApplicationWindow):
     def __init__(s, app):
         super().__init__(application=app, title="Wayfire Config Manager")
-        s.set_default_size(1000, 580)
-        s.set_size_request(750, 550)
+        # The side panel is collapsed by default, so the window opens at the
+        # usual (panel-less) WCM size and grows wider when the panel is opened.
+        s.set_default_size(1000, 600)
+        s.set_size_request(640, 520)
         ip = find_app_icon()
         if ip:
             try:
@@ -2307,6 +2998,117 @@ class WCM(Gtk.ApplicationWindow):
                 p.option_groups.append(g)
             s.plugins.append(p)
 
+    def _side_panel_width(s):
+        """Target width of the side panel for whichever view is showing: the
+        wide rendered wiki page vs the narrow live .ini editor."""
+        ss = getattr(s, "side_stack", None)
+        if ss is not None and ss.get_visible_child_name() == "wiki":
+            return SIDE_PANEL_W
+        return SIDE_INIPANEL_W
+
+    def _set_side_panel(s, open_):
+        if s._side_open == open_:
+            return
+        s._side_open = open_
+        # Keep every "show/collapse panel" button (main + plugin panels) in sync.
+        for lbl in getattr(s, "_side_toggle_lbls", []):
+            lbl.set_text("\u203a" if open_ else "\u2039")
+        for btn in getattr(s, "_side_toggle_btns", []):
+            btn.set_tooltip_text("Collapse panel" if open_ else "Show panel")
+        if open_:
+            s.left_stack.set_visible_child_name("thin")
+            # Capture the panel-less width only when we're starting from a fully
+            # collapsed state, so a fast reverse mid-animation keeps the right
+            # base instead of reading a half-animated width.
+            if (not s._resize_tick_id
+                    and not s._side_revealer.get_child_revealed()):
+                s._collapsed_w = max(s.get_width(), 1)
+            s._side_revealer.set_reveal_child(True)
+            s._anim_panel_w = s._side_panel_width()
+        else:
+            s.left_stack.set_visible_child_name(
+                getattr(s, "_page_left_child", "main"))
+            if not getattr(s, "_collapsed_w", 0):
+                s._collapsed_w = max(640, s.get_width() - s._side_panel_width())
+            s._side_revealer.set_reveal_child(False)
+            s._anim_panel_w = 0
+        # The window without the panel is always the collapsed width; the panel
+        # slides in on top of it. Height isn't animated, so keep whatever it is.
+        s._anim_base_w = max(getattr(s, "_collapsed_w", 0) or s.get_width(), 1)
+        s._anim_base_h = max(s.get_height(), 1)
+        s._start_resize_anim(open_)
+
+    def _start_resize_anim(s, target_open):
+        """Drive the window width so it stays snug against the sliding panel.
+
+        The revealer animates its own width between 0 and the panel's width
+        (SIDE_INIPANEL_W for the editor, SIDE_PANEL_W for the wiki); each
+        frame we read that width and size the window to base + panel, so the
+        window grows/shrinks smoothly in lockstep with the slide — no snap, no
+        clipping, and the shrink actually happens (a plain size-request can't
+        shrink a window, but pairing it with the collapsing revealer can)."""
+        s._stop_resize_anim()
+        s._resize_target_open = target_open
+        clock = s.get_frame_clock()
+        if clock is None:
+            # No frame clock (window not mapped yet) — just snap to the target.
+            s._finish_resize_anim()
+            return
+        s._resize_t0 = clock.get_frame_time()
+        try:
+            s._resize_tick_id = s.add_tick_callback(s._resize_tick)
+        except Exception:
+            s._resize_tick_id = 0
+            s._finish_resize_anim()
+
+    def _resize_tick(s, _widget, clock, *_args):
+        rev = getattr(s, "_side_revealer", None)
+        if rev is None:
+            s._finish_resize_anim()
+            return False
+        panel_w = max(rev.get_width(), 0)
+        w = s._anim_base_w + panel_w
+        s.set_size_request(w, s._anim_base_h)
+        s.set_default_size(w, s._anim_base_h)
+        # The transition is finished once the revealer reaches its target state.
+        done = (rev.get_child_revealed() == s._resize_target_open)
+        # Safety valve so a stuck transition can't keep the callback alive.
+        if clock.get_frame_time() - s._resize_t0 > 900_000:
+            done = True
+        if done:
+            s._resize_tick_id = 0
+            s._finish_resize_anim()
+            return False
+        return True
+
+    def _finish_resize_anim(s):
+        # Settle on the exact final size, then relax the forced minimum so the
+        # user can resize the window freely again.
+        fw = s._anim_base_w + getattr(s, "_anim_panel_w", 0)
+        s.set_size_request(fw, s._anim_base_h)
+        s.set_default_size(fw, s._anim_base_h)
+        GLib.timeout_add(40, lambda: (s.set_size_request(640, 520), False)[1])
+        s._side_anim_id = 0
+
+    def _stop_resize_anim(s):
+        if getattr(s, "_resize_tick_id", 0):
+            try:
+                s.remove_tick_callback(s._resize_tick_id)
+            except Exception:
+                pass
+            s._resize_tick_id = 0
+
+    def _sync_left_panel(s):
+        """Show the left panel that matches the current page, unless the side
+        panel is expanded — in which case the left rail stays collapsed to the
+        thin strip. Called after every navigation so the plugin/display/main
+        panels and the expandable side panel never fight over the left stack."""
+        if getattr(s, "_side_open", False):
+            s.left_stack.set_visible_child_name("thin")
+        else:
+            s.left_stack.set_visible_child_name(
+                getattr(s, "_page_left_child", "main"))
+
     def _build_ui(s):
         gb = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
         s.left_stack = Gtk.Stack()
@@ -2314,22 +3116,29 @@ class WCM(Gtk.ApplicationWindow):
         s.left_stack.set_transition_duration(450)
         s.left_stack.add_css_class("left-panel")
         s.left_stack.set_vexpand(True)
-        s.left_stack.set_size_request(260, -1)
+        s.left_stack.set_size_request(0, -1)
         s.left_stack.set_hexpand(False)
         s.left_stack.set_halign(Gtk.Align.START)
         ml = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+
+        s._left_content = Gtk.Revealer()
+        s._left_content.set_transition_type(Gtk.RevealerTransitionType.SLIDE_LEFT)
+        s._left_content.set_transition_duration(250)
+        s._left_content.set_reveal_child(True)
+        inner = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+
         fl = Gtk.Label()
         fl.set_markup("<span size='large'><b>Filter</b></span>")
         fl.set_margin_top(14)
         fl.set_margin_start(14)
         fl.add_css_class("filter-label")
-        ml.append(fl)
+        inner.append(fl)
         s.search_entry = Gtk.SearchEntry()
         s.search_entry.set_margin_start(14)
         s.search_entry.set_margin_end(14)
         s.search_entry.set_margin_top(8)
         s.search_entry.connect("search-changed", s._on_search)
-        ml.append(s.search_entry)
+        inner.append(s.search_entry)
 
         # --- Master presets section ---
         ps = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
@@ -2359,11 +3168,11 @@ class WCM(Gtk.ApplicationWindow):
         db.connect("clicked", s._on_master_delete)
         pb.append(db)
         ps.append(pb)
-        ml.append(ps)
+        inner.append(ps)
 
         spacer = Gtk.Box()
         spacer.set_vexpand(True)
-        ml.append(spacer)
+        inner.append(spacer)
         theme_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
         theme_box.set_halign(Gtk.Align.CENTER)
         theme_box.set_margin_bottom(10)
@@ -2379,21 +3188,23 @@ class WCM(Gtk.ApplicationWindow):
         light_icon = Gtk.Label(label="\u2600")
         light_icon.set_tooltip_text("Light")
         theme_box.append(light_icon)
-        ml.append(theme_box)
+        inner.append(theme_box)
+        inner.append(s._make_side_toggle_btn())
         disp_btn = s._make_button("DISPLAY", "preferences-desktop-display")
         disp_btn.add_css_class("action-btn")
         disp_btn.set_margin_start(14)
         disp_btn.set_margin_end(14)
         disp_btn.set_margin_bottom(8)
         disp_btn.connect("clicked", s.open_display)
-        ml.append(disp_btn)
-        ob = s._make_button("Configure Outputs", "video-display")
+        inner.append(disp_btn)
+
+        ob = s._make_button("Outputs", "video-display")
         ob.add_css_class("action-btn")
         ob.set_margin_start(14)
         ob.set_margin_end(14)
         ob.set_margin_bottom(8)
         ob.connect("clicked", s._launch_wd)
-        ml.append(ob)
+        inner.append(ob)
         cb = s._make_button("Close", "window-close")
         cb.add_css_class("action-btn")
         cb.add_css_class("close-btn")
@@ -2401,7 +3212,9 @@ class WCM(Gtk.ApplicationWindow):
         cb.set_margin_end(14)
         cb.set_margin_bottom(14)
         cb.connect("clicked", lambda w: s.close())
-        ml.append(cb)
+        inner.append(cb)
+        s._left_content.set_child(inner)
+        ml.append(s._left_content)
         s.left_stack.add_named(ml, "main")
         pl = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         s.pnl = Gtk.Label()
@@ -2415,6 +3228,7 @@ class WCM(Gtk.ApplicationWindow):
         s.pnl.set_margin_end(10)
         s.pnl.add_css_class("plugin-title")
         pl.append(s.pnl)
+
         s.pdl = Gtk.Label()
         s.pdl.set_wrap(True)
         s.pdl.set_max_width_chars(20)
@@ -2468,6 +3282,15 @@ class WCM(Gtk.ApplicationWindow):
         sp2 = Gtk.Box()
         sp2.set_vexpand(True)
         pl.append(sp2)
+        pl.append(s._make_side_toggle_btn())
+        wk = s._make_button("Wiki", "help-browser")
+        wk.add_css_class("action-btn")
+        wk.set_margin_start(14)
+        wk.set_margin_end(14)
+        wk.set_margin_bottom(8)
+        wk.set_tooltip_text("Open the Wayfire wiki for this plugin")
+        wk.connect("clicked", s._open_wiki)
+        pl.append(wk)
         bb = s._make_button("Back", "go-previous")
         bb.add_css_class("action-btn")
         bb.add_css_class("back-btn")
@@ -2477,6 +3300,8 @@ class WCM(Gtk.ApplicationWindow):
         bb.connect("clicked", lambda w: s.open_page(None))
         pl.append(bb)
         s.left_stack.add_named(pl, "plugin")
+
+
 
         # --- DISPLAY left panel ---
         dlp = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
@@ -2531,9 +3356,99 @@ class WCM(Gtk.ApplicationWindow):
         s.main_page = MainPage(s.plugins, s)
         s.main_stack.add_named(s.main_page, "main")
         gb.append(s.main_stack)
+
+        # Thin strip shown when side panel is open
+        thin = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        thin.set_size_request(48, -1)
+        thin.set_hexpand(False)
+        thin.set_halign(Gtk.Align.START)
+        thin.add_css_class("left-panel")
+        back_thin = Gtk.Button.new_from_icon_name("go-previous")
+        back_thin.add_css_class("flat")
+        back_thin.set_tooltip_text("Close panel")
+        back_thin.set_margin_top(8)
+        back_thin.connect("clicked", s._toggle_side_panel)
+        thin.append(back_thin)
+        s.left_stack.add_named(thin, "thin")
+        s.left_stack.set_visible_child_name("main")
+        s.left_stack.set_hhomogeneous(False)
+
+        # --- Live .ini panel + embedded wiki on the right ---
+        s.ini_panel = LiveIniPanel()
+        s.wiki_view = WikiView(on_back=s._show_editor, open_external=s._open_url)
+        s.side_stack = Gtk.Stack()
+        s.side_stack.set_transition_type(Gtk.StackTransitionType.SLIDE_LEFT_RIGHT)
+        s.side_stack.set_transition_duration(300)
+        # Size to whichever view is visible (narrow editor vs wide wiki) rather
+        # than always reserving the widest child's width.
+        s.side_stack.set_hhomogeneous(False)
+        s.side_stack.set_hexpand(False)
+        s.side_stack.add_named(s.ini_panel, "editor")
+        s.side_stack.add_named(s.wiki_view, "wiki")
+        s.side_stack.set_visible_child_name("editor")
+
+        # The whole side panel lives in a Revealer so it slides in/out cleanly:
+        # its measured width animates between 0 and the visible view's width
+        # (narrow editor vs wide wiki), which we read each frame to grow/shrink
+        # the window in lockstep (see _resize_tick). It starts collapsed, so the
+        # window opens at the usual panel-less size.
+        s._side_revealer = Gtk.Revealer()
+        s._side_revealer.set_transition_type(Gtk.RevealerTransitionType.SLIDE_LEFT)
+        s._side_revealer.set_transition_duration(280)
+        s._side_revealer.set_child(s.side_stack)
+        s._side_revealer.set_reveal_child(False)
+        gb.append(s._side_revealer)
+        s._side_open = False
+        s._side_anim_id = 0
+        s._resize_tick_id = 0
+        s._collapsed_w = 0
+        # Which left panel belongs to the page currently shown in main_stack
+        # (main / plugin / display). This is the single source of truth the
+        # side-panel expand/collapse restores to, so navigating into a plugin
+        # always shows that plugin's left panel rather than the main menu.
+        s._page_left_child = "main"
+
+        # --- collapse / expand rail, sat at the top-right just before the
+        # side panel. The button hides or shows the whole side panel (editor
+        # *and* webpage) and grows/shrinks the window width to match. ---
+        s._side_rail = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        s._side_rail.set_valign(Gtk.Align.START)
+        s._side_rail.add_css_class("side-rail")
+
+        s.config.add_save_listener(lambda c: s.ini_panel.show(c))
+        if s.wf_shell_config is not s.config:
+            s.wf_shell_config.add_save_listener(lambda c: s.ini_panel.show(c))
+        s.ini_panel.show(s.config)
+
         s.set_child(gb)
         s.plugin_page = None
         s.display_page = None
+
+    def _make_side_toggle_btn(s):
+        """Create a 'show / collapse side panel' button. Several of these can
+        exist (one per left panel), so each is registered and kept in sync by
+        _set_side_panel. Clicking any of them toggles the side panel, which in
+        turn collapses the left rail to the thin strip for consistency."""
+        if not hasattr(s, "_side_toggle_btns"):
+            s._side_toggle_btns = []
+            s._side_toggle_lbls = []
+        open_ = getattr(s, "_side_open", False)
+        btn = Gtk.Button()
+        btn.add_css_class("wiki-nav")
+        btn.add_css_class("side_toggle_btn")
+        btn.set_margin_start(14)
+        btn.set_margin_end(14)
+        btn.set_margin_bottom(8)
+        lbl = Gtk.Label(label="\u203a" if open_ else "\u2039")
+        btn.set_child(lbl)
+        btn.set_tooltip_text("Collapse panel" if open_ else "Show panel")
+        btn.connect("clicked", s._toggle_side_panel)
+        s._side_toggle_btns.append(btn)
+        s._side_toggle_lbls.append(lbl)
+        # Keep the legacy single-button references pointing at the first one.
+        s._side_toggle_btn = s._side_toggle_btns[0]
+        s._side_toggle_lbl = s._side_toggle_lbls[0]
+        return btn
 
     def _make_button(s, text, icon):
         btn = Gtk.Button()
@@ -2543,6 +3458,58 @@ class WCM(Gtk.ApplicationWindow):
         bx.append(Gtk.Label(label=text))
         btn.set_child(bx)
         return btn
+
+    def _open_url(s, url):
+        try:
+            Gio.AppInfo.launch_default_for_uri(url, None)
+            return
+        except Exception:
+            pass
+        for cmd in (["xdg-open", url], ["gio", "open", url]):
+            try:
+                subprocess.Popen(cmd)
+                return
+            except Exception:
+                continue
+
+    def _wiki_url_for(s, plg):
+        """Build a Wayfire wiki URL for a plugin (best-effort anchor)."""
+        if plg is None:
+            return "https://github.com/WayfireWM/wayfire/wiki/Configuration"
+        if plg.type == PluginType.WF_SHELL:
+            # wf-shell (panel/dock/background) lives in its own repo.
+            return "https://github.com/WayfireWM/wf-shell"
+        base = "https://github.com/WayfireWM/wayfire/wiki/Configuration"
+        slug = (plg.disp_name or plg.name or "").strip().lower()
+        slug = re.sub(r"[^a-z0-9 -]", "", slug).replace(" ", "-")
+        return f"{base}#{slug}" if slug else base
+
+    def _open_wiki(s, *_):
+        url = s._wiki_url_for(s.current_plugin)
+        if getattr(s, "wiki_view", None) and getattr(s, "side_stack", None):
+            s.wiki_view.load(url)
+            s.side_stack.set_visible_child_name("wiki")
+            s._set_side_panel(True)
+        else:
+            s._open_url(url)
+
+    def _show_editor(s, *_):
+        # Collapse the panel, animating from whatever it's currently showing
+        # (the wide wiki at this point), then quietly reset to the editor view
+        # once it's hidden so the next open shows the editor at its own width.
+        # Switching the child before the slide would snap the width first.
+        s._set_side_panel(False)
+
+        def _reset_to_editor():
+            if getattr(s, "side_stack", None):
+                s.side_stack.set_visible_child_name("editor")
+            return False
+
+        GLib.timeout_add(360, _reset_to_editor)
+
+    def _toggle_side_panel(s, *_):
+        s._set_side_panel(not getattr(s, "_side_open", False))
+
 
     def _cfg_for(s, plg):
         """Return the correct config file for a plugin.
@@ -2558,6 +3525,10 @@ class WCM(Gtk.ApplicationWindow):
     def _on_theme_toggle(s, switch, pspec):
         s._dark = not switch.get_active()
         _apply_theme(s._dark)
+        # The editor's syntax colours are inline Pango markup, so re-render it
+        # to pick up the new palette (the CSS-based chrome updates on its own).
+        if getattr(s, "ini_panel", None) is not None:
+            s.ini_panel.restyle()
 
     def _on_search(s, entry):
         s.main_page.set_filter(entry.get_text())
@@ -2579,11 +3550,23 @@ class WCM(Gtk.ApplicationWindow):
             s.plugin_page = PluginPage(plg, s._cfg_for(plg))
             s.main_stack.add_named(s.plugin_page, "plugin")
             s.main_stack.set_visible_child_name("plugin")
-            s.left_stack.set_visible_child_name("plugin")
+            s._page_left_child = "plugin"
+            # Keep the side panel pointed at the live editor (not a stale wiki)
+            # and follow this plugin's config.
+            if getattr(s, "side_stack", None):
+                s.side_stack.set_visible_child_name("editor")
+            if getattr(s, "ini_panel", None):
+                s.ini_panel.show(s._cfg_for(plg))
+            s._sync_left_panel()
         else:
             s.main_stack.set_visible_child_name("main")
-            s.left_stack.set_visible_child_name("main")
             s.current_plugin = None
+            s._page_left_child = "main"
+            if getattr(s, "side_stack", None):
+                s.side_stack.set_visible_child_name("editor")
+            if getattr(s, "ini_panel", None):
+                s.ini_panel.show(s.config)
+            s._sync_left_panel()
 
     def open_display(s, btn=None):
         s.current_plugin = None
@@ -2595,7 +3578,8 @@ class WCM(Gtk.ApplicationWindow):
         s.display_page = DisplayPage(s)
         s.main_stack.add_named(s.display_page, "display")
         s.main_stack.set_visible_child_name("display")
-        s.left_stack.set_visible_child_name("display")
+        s._page_left_child = "display"
+        s._sync_left_panel()
 
     def set_plugin_enabled(s, plg, en):
         if plg.is_core_plugin or plg.type == PluginType.WF_SHELL:

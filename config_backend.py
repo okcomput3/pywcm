@@ -49,8 +49,14 @@ class WayfireConfigFile:
         self.path = path
         self.entries = []           # List[ConfigEntry] preserving file order
         self._section_map = {}      # section_name -> {key -> entry_index}
+        self._save_listeners = []   # callables invoked after each save()
         if path and os.path.isfile(path):
             self._load(path)
+
+    def add_save_listener(self, fn):
+        """Register a callback invoked (with self) after every save()."""
+        if fn not in self._save_listeners:
+            self._save_listeners.append(fn)
 
     def _load(self, path):
         self.entries.clear()
@@ -222,6 +228,12 @@ class WayfireConfigFile:
         with open(path, 'w') as f:
             for entry in self.entries:
                 f.write(entry.to_line())
+
+        for fn in self._save_listeners:
+            try:
+                fn(self)
+            except Exception:
+                pass
 
     def get_enabled_plugins(self):
         """Get the list of enabled plugins from [core] plugins."""
