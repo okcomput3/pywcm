@@ -193,6 +193,85 @@ def test_animation_type():
         print("PASS: animation_type")
 
 
+def test_extra_animations_merge():
+    """Extra-animation plugins should be folded into the animate dropdowns."""
+    from metadata import merge_extra_animations, collect_extra_animations
+
+    animate_xml = """\
+<?xml version="1.0"?>
+<wayfire>
+  <plugin name="animate">
+    <_short>Animate</_short>
+    <_long>Animations when a window is opened or closed.</_long>
+    <category>Effects</category>
+    <option name="open_animation" type="string">
+      <_short>Open animation</_short>
+      <default>zoom</default>
+      <desc><value>fade</value><_name>Fade</_name></desc>
+      <desc><value>zoom</value><_name>Zoom</_name></desc>
+    </option>
+    <option name="close_animation" type="string">
+      <_short>Close animation</_short>
+      <default>zoom</default>
+      <desc><value>fade</value><_name>Fade</_name></desc>
+      <desc><value>zoom</value><_name>Zoom</_name></desc>
+    </option>
+  </plugin>
+</wayfire>
+"""
+    extra_xml = """\
+<?xml version="1.0"?>
+<wayfire>
+  <plugin name="extra-animations">
+    <_short>Extra Animations</_short>
+    <_long>Extra animations to extend animate plugin</_long>
+    <category>Effects</category>
+    <group>
+      <_short>Helix Settings</_short>
+      <option name="helix_duration" type="animation">
+        <_short>Helix duration</_short><default>700ms linear</default>
+      </option>
+    </group>
+    <group>
+      <_short>Burn Settings</_short>
+      <option name="burn_duration" type="animation">
+        <_short>Burn duration</_short><default>1000ms linear</default>
+      </option>
+    </group>
+  </plugin>
+</wayfire>
+"""
+    with tempfile.TemporaryDirectory() as d:
+        with open(os.path.join(d, 'animate.xml'), 'w') as f:
+            f.write(animate_xml)
+        with open(os.path.join(d, 'extra-animations.xml'), 'w') as f:
+            f.write(extra_xml)
+
+        plugins = load_metadata_from_dir(d)
+
+        extras = collect_extra_animations(plugins)
+        assert ('helix', 'Helix') in extras
+        assert ('burn', 'Burn') in extras
+
+        added = merge_extra_animations(plugins)
+        assert added == 4  # helix + burn, across open + close
+
+        animate = next(p for p in plugins if p.name == 'animate')
+        for grp in animate.option_groups:
+            for opt in grp.options:
+                if opt.name in ('open_animation', 'close_animation'):
+                    values = [v for _, v in opt.str_labels]
+                    assert 'helix' in values
+                    assert 'burn' in values
+                    assert ('Helix', 'helix') in opt.str_labels
+
+        # Idempotent: a second merge must not duplicate entries.
+        added2 = merge_extra_animations(plugins)
+        assert added2 == 0
+
+        print("PASS: extra_animations_merge")
+
+
 def test_import_wcm():
     """Just make sure the main module imports without error."""
     try:
@@ -202,8 +281,10 @@ def test_import_wcm():
         assert hasattr(wcm_mod, 'PluginPage')
         assert hasattr(wcm_mod, 'OptionWidget')
         print("PASS: import_wcm")
-    except ValueError as e:
-        if 'Namespace Gtk not available' in str(e):
+    except (ValueError, ModuleNotFoundError) as e:
+        if isinstance(e, ModuleNotFoundError) and getattr(e, 'name', '') == 'gi':
+            print("SKIP: import_wcm (python3-gi not available)")
+        elif 'Namespace Gtk not available' in str(e):
             print("SKIP: import_wcm (GTK4 not available)")
         else:
             raise
@@ -214,5 +295,6 @@ if __name__ == '__main__':
     test_option_types()
     test_groups_and_subgroups()
     test_animation_type()
+    test_extra_animations_merge()
     test_import_wcm()
     print("\nAll metadata tests passed!")

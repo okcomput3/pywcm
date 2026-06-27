@@ -396,6 +396,104 @@ def find_wfshell_metadata_dirs():
     return dirs
 
 
+ANIMATE_PLUGIN = 'animate'
+# Animate options whose dropdown should gain discovered extra animations.
+ANIM_TARGET_OPTIONS = ('open_animation', 'close_animation')
+
+
+def _iter_plugin_options(plugin):
+    """Yield every Option in a plugin, descending into groups/subgroups."""
+    stack = list(plugin.option_groups)
+    while stack:
+        opt = stack.pop()
+        yield opt
+        if opt.options:
+            stack.extend(opt.options)
+
+
+def _is_animation_extension(plugin):
+    """True if a plugin extends the animate plugin with extra animations.
+
+    Extension plugins (e.g. extra-animations, phodius-extras) describe
+    themselves as extending the animate plugin and are built from groups that
+    each carry a "<name>_duration" animation option.
+    """
+    if plugin.name == ANIMATE_PLUGIN:
+        return False
+    tip = (plugin.tooltip or '').lower()
+    if 'animate plugin' in tip:
+        return True
+    # Structural fallback: an Effects plugin whose groups carry animation
+    # duration options is almost certainly an animation set.
+    if (plugin.category or '').lower() == 'effects':
+        for grp in plugin.option_groups:
+            for opt in grp.options:
+                if (opt.type == OptionType.ANIMATION
+                        and opt.name.endswith('_duration')):
+                    return True
+    return False
+
+
+def collect_extra_animations(plugins):
+    """Scan loaded plugins for animation extensions.
+
+    Returns a list of (value, display_name) pairs. Each animation is identified
+    by a "<name>_duration" option of type animation: <name> is the value written
+    to the .ini (e.g. ``helix``), and the enclosing group's title (minus a
+    trailing "Settings") is the human-friendly label (e.g. ``Helix``).
+    """
+    found = []
+    seen = set()
+    for plugin in plugins:
+        if not _is_animation_extension(plugin):
+            continue
+        for grp in plugin.option_groups:
+            dur_opt = None
+            for opt in grp.options:
+                if (opt.type == OptionType.ANIMATION
+                        and opt.name.endswith('_duration')):
+                    dur_opt = opt
+                    break
+            if dur_opt is None:
+                continue
+            value = dur_opt.name[:-len('_duration')]
+            if not value or value in seen:
+                continue
+            seen.add(value)
+            disp = (grp.name or '').strip()
+            if disp.lower().endswith('settings'):
+                disp = disp[:-len('settings')].strip()
+            if not disp:
+                disp = value.replace('_', ' ').title()
+            found.append((value, disp))
+    return found
+
+
+def merge_extra_animations(plugins):
+    """Append discovered extra animations to the animate plugin's open/close
+    animation dropdowns, so they can be selected without editing the .ini.
+
+    This is fully dynamic: whatever animation-extension plugins are installed
+    alongside animate.xml get scanned and folded in at load time.
+    """
+    extras = collect_extra_animations(plugins)
+    if not extras:
+        return 0
+    animate = next((p for p in plugins if p.name == ANIMATE_PLUGIN), None)
+    if animate is None:
+        return 0
+    added = 0
+    for opt in _iter_plugin_options(animate):
+        if opt.name in ANIM_TARGET_OPTIONS and opt.type == OptionType.STRING:
+            existing = {v for _, v in opt.str_labels}
+            for value, disp in extras:
+                if value not in existing:
+                    opt.str_labels.append((disp, value))
+                    existing.add(value)
+                    added += 1
+    return added
+
+
 def load_all_metadata():
     """Load all wayfire and wf-shell metadata."""
     plugins = []
@@ -413,6 +511,15 @@ def load_all_metadata():
         plugins.extend(load_metadata_from_dir(d))
     for d in ws_dirs:
         plugins.extend(load_metadata_from_dir(d))
+
+    # Dynamically fold any installed extra-animation plugins (helix, burn,
+    # mercury, dali, ...) into the animate open/close animation dropdowns.
+    try:
+        n_anim = merge_extra_animations(plugins)
+        if n_anim:
+            print(f"WCM: Added {n_anim} extra animation choice(s) to animate")
+    except Exception as e:
+        print(f"WCM: Failed to merge extra animations: {e}")
 
     if plugins:
         cats = {}

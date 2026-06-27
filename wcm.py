@@ -73,20 +73,20 @@ def _make_css(dark=True):
     if dark:
         bg_deep, bg_panel, bg_card, bg_input, bg_input_f = (
             "#0b0d16",
-            "rgba(14,17,32,0.88)",
-            "rgba(18,22,40,0.72)",
-            "rgba(12,15,30,0.78)",
-            "rgba(16,20,38,0.90)",
+            "rgba(13,16,30,0.94)",
+            "rgba(18,22,40,0.82)",
+            "rgba(12,15,30,0.86)",
+            "rgba(16,20,38,0.94)",
         )
         amber, amber_l, rose, teal = "#e0982a", "#f0b84d", "#d25d77", "#38beb3"
         txt1, txt2 = "rgba(228,224,218,0.95)", "rgba(180,175,168,0.78)"
         bdr_s, bdr_a = "rgba(224,152,42,0.10)", "rgba(224,152,42,0.50)"
         ab, ar, at = "224,152,42", "210,93,119", "56,190,179"
-        panel_bg = "rgba(12,14,26,0.92)"
-        popup_bg = "rgba(12,15,28,0.96)"
+        panel_bg = "rgba(12,14,26,0.96)"
+        popup_bg = "rgba(12,15,28,0.98)"
         dlg_bg = "#0e1120"
         dlg_hdr = "rgba(14,17,32,0.98)"
-        left_bdr = "rgba(224,152,42,0.06)"
+        left_bdr = "rgba(224,152,42,0.12)"
         tab_bg = "rgba(10,12,24,0.75)"
     else:
         bg_deep, bg_panel, bg_card, bg_input, bg_input_f = (
@@ -107,9 +107,9 @@ def _make_css(dark=True):
         left_bdr = "rgba(176,120,24,0.10)"
         tab_bg = "rgba(245,240,232,0.80)"
     if dark:
-        ini_bg, ini_fg, ini_accent, ini_gutter = "#090b14", "#d7d3cb", "#5fd6cb", "#3f4658"
-        ini_border, ini_hdr_border = "rgba(95,214,203,0.16)", "rgba(95,214,203,0.14)"
-        ini_grad_a, ini_grad_b = "rgba(95,214,203,0.06)", "rgba(9,11,20,0.0)"
+        ini_bg, ini_fg, ini_accent, ini_gutter = "#0a0d18", "#e6e0d8", "#63ded4", "#636b80"
+        ini_border, ini_hdr_border = "rgba(95,214,203,0.26)", "rgba(95,214,203,0.22)"
+        ini_grad_a, ini_grad_b = "rgba(95,214,203,0.09)", "rgba(9,11,20,0.0)"
         ini_hot, ini_hot_a, ini_hot_b = "#5fd6cb", "rgba(95,214,203,0.40)", "rgba(95,214,203,0.13)"
     else:
         ini_bg, ini_fg, ini_accent, ini_gutter = "#f3efe7", "#2a2520", "#2a8a80", "#a39a8c"
@@ -162,8 +162,26 @@ button.flat:hover {{ background-color: transparent; background-image: none; bord
 entry {{ background-color: @bg_input; color: @text_primary; border: 1px solid @border_subtle; border-radius: 8px; padding: 7px 12px; caret-color: @amber; transition: all 300ms cubic-bezier(0.22,1,0.36,1); box-shadow: inset 0 1px 3px rgba(0,0,0,{'0.30' if dark else '0.06'}); }}
 entry:focus {{ background-color: @bg_input_focus; border-color: @border_active; box-shadow: inset 0 1px 3px rgba(0,0,0,{'0.30' if dark else '0.06'}), 0 0 16px rgba({ab},0.12); }}
 entry > text > selection {{ background-color: rgba({ab},0.22); }}
-searchentry {{ background-color: @bg_input; border: 1px solid rgba({ab},0.10); border-radius: 14px; padding: 11px 18px; color: @text_primary; font-size: 1.05em; transition: all 400ms cubic-bezier(0.22,1,0.36,1); }}
-searchentry:focus {{ border-color: @amber; box-shadow: 0 0 24px rgba({ab},0.16); }}
+.plugin-search, entry.plugin-search, entry.search.plugin-search, searchentry.plugin-search {{
+    background-color: {'rgba(12,16,28,0.96)' if dark else 'rgba(255,255,255,0.96)'};
+    background-image: none;
+    border: 1px solid rgba({ab},0.10);
+    border-radius: 14px;
+    padding: 11px 18px;
+    color: @text_primary;
+    font-size: 1.05em;
+    transition: all 400ms cubic-bezier(0.22,1,0.36,1);
+}}
+.plugin-search:focus, entry.plugin-search:focus, entry.search.plugin-search:focus, searchentry.plugin-search:focus {{
+    background-color: {'rgba(14,18,32,0.98)' if dark else 'rgba(255,255,255,0.98)'};
+    background-image: none;
+    border-color: @amber;
+    box-shadow: 0 0 24px rgba({ab},0.16);
+}}
+.plugin-search text, entry.plugin-search text, entry.search.plugin-search text, searchentry.plugin-search text {{
+    background-color: {'rgba(12,16,28,0.98)' if dark else 'rgba(255,255,255,0.98)'};
+    color: @text_primary;
+}}
 spinbutton {{ background-color: @bg_input; border: 1px solid @border_subtle; border-radius: 8px; color: @text_primary; transition: all 300ms ease; }}
 spinbutton:focus-within {{ border-color: @border_active; box-shadow: 0 0 14px rgba({ab},0.12); }}
 spinbutton > button {{ background-color: rgba({ab},0.04); border: none; border-radius: 0; color: @amber; min-width: 30px; transition: all 220ms ease; }}
@@ -225,28 +243,41 @@ stack {{ transition-duration: 450ms; }}
 .left-panel {{
     background-color: {panel_bg};
     border-right: 1px solid {left_bdr};
+    box-shadow: 8px 0 28px rgba(0,0,0,{'0.22' if dark else '0.05'});
 }}
-.category-header {{ padding: 10px 12px; margin-top: 8px; margin-start: 10px; }}
+.content-surface {{ background-color: {'rgba(10,12,24,0.40)' if dark else 'rgba(247,244,239,0.40)'}; border-radius: 18px; border: 1px solid rgba({ab},0.05); }}
+.settings-surface {{ background-color: {'rgba(10,12,24,0.40)' if dark else 'rgba(247,244,239,0.40)'}; border-radius: 16px; border: 1px solid rgba({ab},0.05); padding: 2px; }}
+.category-header {{ padding: 10px 12px; border-radius: 12px; margin-top: 8px; margin-start: 10px; }}
 .category-header label {{ color: @amber; font-weight: 700; letter-spacing: 0.8px; }}
 .category-header image {{ opacity: 0.75; }}
 .category-slide {{ animation: category-slide-in 500ms cubic-bezier(0.22,1,0.36,1) backwards; }}
 .category-slide-out {{ animation: category-slide-out 400ms cubic-bezier(0.22,1,0.36,1) forwards; }}
 
-.plugin-row {{ padding: 5px 8px; border-radius: 10px; transition: all 320ms cubic-bezier(0.22,1,0.36,1); background-color: transparent; background-image: none; }}
-.plugin-row:hover {{ background-color: transparent; background-image: none; }}
-.plugin-row button.flat {{ transition: all 320ms cubic-bezier(0.22,1,0.36,1); background-image: none; }}
-.plugin-row button.flat:hover {{ background-color: transparent; background-image: none; border-color: transparent; box-shadow: none; text-shadow: 0 0 10px rgba({ab},0.35); }}
+.plugin-row {{ padding: 8px 10px; margin: 2px 4px; border-radius: 14px; transition: all 260ms cubic-bezier(0.22,1,0.36,1); background-color: rgba({ab},0.020); background-image: none; border: 1px solid rgba({ab},0.055); min-height: 58px; }}
+.plugin-row:hover {{ background-color: rgba({ab},0.070); border-color: rgba({ab},0.20); box-shadow: 0 6px 22px rgba(0,0,0,{'0.20' if dark else '0.06'}); }}
+.plugin-row.plugin-enabled {{ background-color: rgba({ab},0.040); border-color: rgba({ab},0.13); }}
+.plugin-row.plugin-protected {{ border-color: rgba({at},0.16); }}
+.plugin-row button.flat {{ transition: all 260ms cubic-bezier(0.22,1,0.36,1); background-image: none; padding: 4px 6px; }}
+.plugin-row button.flat:hover {{ background-color: transparent; background-image: none; border-color: transparent; box-shadow: none; text-shadow: 0 0 8px rgba({ab},0.22); }}
 .plugin-row label {{ font-weight: 500; }}
+.plugin-name {{ color: @text_primary; font-weight: 700; }}
+.plugin-meta {{ color: @text_secondary; font-size: 0.82em; font-weight: 400; }}
+.plugin-subrow {{ margin-top: 1px; }}
+.status-pill {{ color: @text_secondary; border: 1px solid rgba({ab},0.10); border-radius: 999px; padding: 1px 7px; font-size: 0.68em; font-weight: 800; letter-spacing: 0.8px; margin-start: 8px; }}
+.status-pill.enabled {{ color: @amber_light; background-color: rgba({ab},0.10); border-color: rgba({ab},0.25); }}
+.status-pill.locked, .status-pill.shell {{ color: @teal; background-color: rgba({at},0.09); border-color: rgba({at},0.25); }}
 
 .plugin-title {{ color: {'#ffffff' if dark else '#1a1510'}; font-weight: 700; }}
 .plugin-desc {{ color: @text_secondary; font-weight: 400; }}
-.option-row {{ padding: 7px 10px; border-radius: 10px; transition: all 280ms ease; }}
-.option-row:hover {{ background-color: rgba({ab},0.03); }}
-.option-label {{ color: @text_secondary; font-weight: 500; transition: all 280ms ease; }}
-.option-row:hover .option-label {{ color: @text_primary; }}
+.option-row {{ padding: 7px 10px; border-radius: 11px; transition: all 220ms ease; border-left: 2px solid transparent; }}
+.option-row:hover {{ background-color: rgba({ab},0.035); }}
+.option-row.is-modified {{ background-color: rgba({ab},0.045); border-left-color: rgba({ab},0.65); }}
+.option-label {{ color: @text_secondary; font-weight: 500; transition: all 220ms ease; }}
+.option-row:hover .option-label, .option-row.is-modified .option-label {{ color: @text_primary; }}
 
-.reset-btn {{ background-color: transparent; border: 1px solid rgba({ar},0.10); border-radius: 8px; color: @rose; padding: 4px 8px; min-width: 30px; min-height: 30px; transition: all 300ms ease; }}
-.reset-btn:hover {{ background-color: rgba({ar},0.10); border-color: rgba({ar},0.40); }}
+.reset-btn {{ background-color: transparent; border: 1px solid rgba({ar},0.10); border-radius: 8px; color: @rose; padding: 4px 8px; min-width: 30px; min-height: 30px; transition: all 240ms ease; }}
+.reset-btn.is-default {{ opacity: 0.42; }}
+.reset-btn:hover {{ background-color: rgba({ar},0.10); border-color: rgba({ar},0.40); opacity: 1; }}
 .grab-btn {{ background-color: rgba({at},0.05); border: 1px solid rgba({at},0.16); color: @teal; font-weight: 700; min-width: 38px; transition: all 300ms ease; }}
 .grab-btn:hover {{ background-color: rgba({at},0.12); border-color: rgba({at},0.45); }}
 .add-btn {{ background-color: rgba({at},0.05); border: 1px solid rgba({at},0.16); color: @success; transition: all 300ms ease; }}
@@ -257,7 +288,9 @@ stack {{ transition-duration: 450ms; }}
 .remove-btn:hover {{ background-color: rgba({ar},0.10); border-color: rgba({ar},0.40); }}
 .run-btn {{ background-color: rgba({at},0.03); border: 1px solid rgba({at},0.10); color: @success; transition: all 300ms ease; }}
 .run-btn:hover {{ background-color: rgba({at},0.10); border-color: rgba({at},0.35); }}
-.action-btn {{ padding: 11px 22px; border-radius: 12px; font-weight: 600; letter-spacing: 0.4px; }}
+.action-btn {{ padding: 11px 22px; border-radius: 12px; font-weight: 600; letter-spacing: 0.1px; }}
+.side_toggle_btn {{ min-height: 38px; border-radius: 11px; }}
+.side_toggle_btn image {{ -gtk-icon-size: 18px; }}
 .action-btn.close-btn {{ background-color: rgba({ar},0.04); border-color: rgba({ar},0.12); color: @rose; }}
 .action-btn.close-btn:hover {{ background-color: rgba({ar},0.10); border-color: rgba({ar},0.40); color: @danger; }}
 .action-btn.back-btn {{ background-color: rgba({at},0.04); border-color: rgba({at},0.12); color: @teal; }}
@@ -303,16 +336,16 @@ window.confirm-window {{ background-color: {panel_bg}; }}
 .confirm-close {{ background-color: transparent; border-color: transparent; padding: 2px 8px; }}
 .confirm-close:hover {{ background-color: rgba({ab},0.14); border-color: transparent; }}
 
-.ini-panel {{ background-color: {ini_bg}; border-left: 1px solid {ini_border}; }}
+.ini-panel {{ background-color: {ini_bg}; border-left: 1px solid {ini_border}; box-shadow: -10px 0 30px rgba(0,0,0,{'0.26' if dark else '0.07'}); }}
 .ini-header {{ padding: 10px 14px; border-bottom: 1px solid {ini_hdr_border}; background-image: linear-gradient(180deg, {ini_grad_a}, {ini_grad_b}); }}
 .ini-dot {{ color: {ini_accent}; font-size: 0.7em; animation: ini-pulse 1.7s ease-in-out infinite; }}
 .ini-title {{ color: {ini_fg}; font-family: monospace; font-weight: 600; font-size: 0.95em; letter-spacing: 0.3px; }}
-.ini-live {{ color: {ini_accent}; font-family: monospace; font-size: 0.66em; font-weight: 700; letter-spacing: 2px; opacity: 0.6; }}
+.ini-live {{ color: {ini_accent}; font-family: monospace; font-size: 0.66em; font-weight: 800; letter-spacing: 2px; opacity: 0.82; }}
 .ini-scroll {{ background-color: transparent; }}
 .ini-body {{ padding: 8px 0 44px 0; font-family: monospace; }}
 .ini-line {{ padding: 1px 12px 1px 6px; border-left: 2px solid transparent; }}
 .ini-gutter {{ color: {ini_gutter}; font-family: monospace; font-size: 0.82em; margin-right: 10px; }}
-.ini-text {{ font-family: monospace; font-size: 0.86em; }}
+.ini-text {{ font-family: monospace; font-size: 0.88em; }}
 @keyframes ini-pulse {{ 0% {{ opacity: 0.3; }} 50% {{ opacity: 1; }} 100% {{ opacity: 0.3; }} }}
 @keyframes ini-hot {{ 0% {{ background-color: {ini_hot_a}; }} 60% {{ background-color: {ini_hot_b}; }} 100% {{ background-color: transparent; }} }}
 .ini-hot {{ border-left: 2px solid {ini_hot}; animation: ini-hot 1.35s cubic-bezier(0.22,1,0.36,1); }}
@@ -743,6 +776,7 @@ class OptionWidget(Gtk.Box):
         s.config = cfg
         s.plugin = plg
         s._block = False
+        s._text_save_id = 0
         s.add_css_class("option-row")
         s.set_margin_start(4)
         s.set_margin_end(4)
@@ -773,6 +807,7 @@ class OptionWidget(Gtk.Box):
         rb.connect("clicked", s._reset)
         s.end_box.append(rb)
         s.reset_btn = rb
+        s._update_modified_state()
 
     def _build(s, opt, cur):
         ot = opt.type
@@ -913,18 +948,84 @@ class OptionWidget(Gtk.Box):
             s.ed.connect("changed", s._on_text_changed)
             s.end_box.append(s.ed)
 
+    def _default_text(s):
+        d = s.option.default_value
+        if s.option.type == OptionType.BOOL:
+            return "true" if bool(d) else "false"
+        if s.option.type == OptionType.ANIMATION:
+            return str(d or "300ms linear")
+        if s.option.type == OptionType.COLOR:
+            return str(d or "0 0 0 1")
+        return str(d or "")
+
+    def _values_equal(s, a, b):
+        a = "" if a is None else str(a).strip()
+        b = "" if b is None else str(b).strip()
+        if s.option.type == OptionType.BOOL:
+            def tb(x):
+                return str(x).strip().lower() in ("true", "1", "yes", "on")
+            return tb(a) == tb(b)
+        if s.option.type == OptionType.INT:
+            try:
+                return int(float(a or 0)) == int(float(b or 0))
+            except Exception:
+                pass
+        if s.option.type == OptionType.DOUBLE:
+            try:
+                return abs(float(a or 0) - float(b or 0)) < 1e-9
+            except Exception:
+                pass
+        return a == b
+
+    def _update_modified_state(s):
+        if not hasattr(s, "reset_btn"):
+            return
+        cur = s.config.get_option(s.plugin.name, s.option.name)
+        default = s._default_text()
+        modified = cur is not None and not s._values_equal(cur, default)
+        if modified:
+            s.add_css_class("is-modified")
+            s.reset_btn.remove_css_class("is-default")
+            s.reset_btn.set_tooltip_text(f"Reset to default: {default}")
+        else:
+            s.remove_css_class("is-modified")
+            s.reset_btn.add_css_class("is-default")
+            s.reset_btn.set_tooltip_text("Already at default")
+
     def _save(s, v):
         if s._block:
             return
+        if getattr(s, "_text_save_id", 0):
+            try:
+                GLib.source_remove(s._text_save_id)
+            except Exception:
+                pass
+            s._text_save_id = 0
         s.config.set_option(s.plugin.name, s.option.name, str(v))
         s.config.save()
+        s._update_modified_state()
 
     def _on_text_changed(s, widget):
-        """Called on every keystroke — mirrors C++ WCM live-save behaviour."""
-        if not s._block:
-            s.config.set_option(s.plugin.name, s.option.name,
-                                str(widget.get_text()))
-            s.config.save()
+        """Debounced live-save keeps typing smooth while preserving live updates."""
+        if s._block:
+            return
+        if getattr(s, "_text_save_id", 0):
+            try:
+                GLib.source_remove(s._text_save_id)
+            except Exception:
+                pass
+            s._text_save_id = 0
+        text = str(widget.get_text())
+
+        def do_save():
+            s._text_save_id = 0
+            if not s._block:
+                s.config.set_option(s.plugin.name, s.option.name, text)
+                s.config.save()
+                s._update_modified_state()
+            return False
+
+        s._text_save_id = GLib.timeout_add(350, do_save)
 
     def _save_anim(s):
         s._save(
@@ -1036,6 +1137,7 @@ class PluginPage(Gtk.Notebook):
     def __init__(s, plg, cfg):
         super().__init__()
         s.set_scrollable(True)
+        s.add_css_class("plugin-notebook")
         s.connect("switch-page", s._on_ts)
         s._lt = 0
         s._br = False
@@ -1045,6 +1147,8 @@ class PluginPage(Gtk.Notebook):
                 continue
             s._pending_add = None
             bx = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+            bx.set_hexpand(True)
+            bx.add_css_class("settings-surface")
             bx.set_margin_start(10)
             bx.set_margin_end(10)
             bx.set_margin_top(10)
@@ -1071,6 +1175,8 @@ class PluginPage(Gtk.Notebook):
         if s._is_winrules(plg) and not s._rules_done:
             s._pending_add = None
             bx = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+            bx.set_hexpand(True)
+            bx.add_css_class("settings-surface")
             bx.set_margin_start(10)
             bx.set_margin_end(10)
             bx.set_margin_top(10)
@@ -1431,13 +1537,17 @@ class PluginPage(Gtk.Notebook):
 
 class PluginButtonWidget(Gtk.Box):
     def __init__(s, plg, wcm):
-        super().__init__(orientation=Gtk.Orientation.HORIZONTAL, spacing=5)
+        super().__init__(orientation=Gtk.Orientation.HORIZONTAL, spacing=9)
         s.plugin = plg
         s.wcm = wcm
         s.set_halign(Gtk.Align.START)
+        s.set_valign(Gtk.Align.CENTER)
         s.add_css_class("plugin-row")
+        if plg.is_core_plugin or plg.type == PluginType.WF_SHELL:
+            s.add_css_class("plugin-protected")
         s.check = Gtk.CheckButton()
         s.check.set_active(plg.enabled)
+        s.check.set_valign(Gtk.Align.CENTER)
         if plg.is_core_plugin or plg.type == PluginType.WF_SHELL:
             s.check.set_sensitive(False)
         else:
@@ -1447,8 +1557,9 @@ class PluginButtonWidget(Gtk.Box):
         btn.add_css_class("flat")
         btn.set_tooltip_text(plg.tooltip or "")
         btn.connect("clicked", lambda w: wcm.open_page(plg))
-        bb = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=5)
+        bb = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
         bb.set_halign(Gtk.Align.START)
+        bb.set_valign(Gtk.Align.CENTER)
         ip = find_plugin_icon(plg.name)
         if not ip:
             ip = (
@@ -1464,14 +1575,68 @@ class PluginButtonWidget(Gtk.Box):
             img = Gtk.Image.new_from_icon_name("preferences-system")
             img.set_pixel_size(32)
         bb.append(img)
+
+        text_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=3)
+        text_box.set_hexpand(True)
+        text_box.set_valign(Gtk.Align.CENTER)
+        head = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        head.set_hexpand(True)
         l = Gtk.Label(label=plg.disp_name or plg.name)
+        l.add_css_class("plugin-name")
+        l.set_xalign(0)
+        l.set_hexpand(True)
         l.set_ellipsize(Pango.EllipsizeMode.END)
-        bb.append(l)
+        head.append(l)
+        text_box.append(head)
+
+        sub = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        sub.add_css_class("plugin-subrow")
+        sub.set_hexpand(True)
+        meta = Gtk.Label(label=(plg.tooltip or plg.name or "").strip())
+        meta.add_css_class("plugin-meta")
+        meta.set_xalign(0)
+        meta.set_hexpand(True)
+        meta.set_ellipsize(Pango.EllipsizeMode.END)
+        meta.set_max_width_chars(34)
+        sub.append(meta)
+        s.status = Gtk.Label()
+        s.status.add_css_class("status-pill")
+        sub.append(s.status)
+        text_box.append(sub)
+        bb.append(text_box)
         btn.set_child(bb)
         s.append(btn)
+        s._refresh_visual_state()
+
+    def _refresh_visual_state(s):
+        if s.plugin.enabled:
+            s.add_css_class("plugin-enabled")
+        else:
+            s.remove_css_class("plugin-enabled")
+        if s.plugin.is_core_plugin:
+            s.status.set_text("CORE")
+            s.status.remove_css_class("enabled")
+            s.status.remove_css_class("shell")
+            s.status.add_css_class("locked")
+        elif s.plugin.type == PluginType.WF_SHELL:
+            s.status.set_text("SHELL")
+            s.status.remove_css_class("enabled")
+            s.status.remove_css_class("locked")
+            s.status.add_css_class("shell")
+        elif s.plugin.enabled:
+            s.status.set_text("ON")
+            s.status.remove_css_class("locked")
+            s.status.remove_css_class("shell")
+            s.status.add_css_class("enabled")
+        else:
+            s.status.set_text("OFF")
+            s.status.remove_css_class("enabled")
+            s.status.remove_css_class("locked")
+            s.status.remove_css_class("shell")
 
     def _on_t(s, c):
         s.wcm.set_plugin_enabled(s.plugin, c.get_active())
+        s._refresh_visual_state()
 
 
 class MainPage(Gtk.ScrolledWindow):
@@ -1482,8 +1647,12 @@ class MainPage(Gtk.ScrolledWindow):
         s._ft = ""
         s._pw = []
         vb = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
-        vb.set_margin_top(10)
-        vb.set_margin_bottom(10)
+        vb.set_hexpand(True)
+        vb.add_css_class("content-surface")
+        vb.set_margin_top(18)
+        vb.set_margin_bottom(18)
+        vb.set_margin_start(10)
+        vb.set_margin_end(10)
         s.sg = Gtk.SizeGroup(mode=Gtk.SizeGroupMode.BOTH)
         s.cd = {}
         for i, (cn, ic) in enumerate(CATEGORIES):
@@ -1501,7 +1670,9 @@ class MainPage(Gtk.ScrolledWindow):
             fb.set_halign(Gtk.Align.START)
             fb.set_min_children_per_line(3)
             fb.set_max_children_per_line(10)
-            fb.set_margin_start(20)
+            fb.set_row_spacing(8)
+            fb.set_column_spacing(12)
+            fb.set_margin_start(10)
             fb.set_filter_func(s._ff)
             vb.append(fb)
             sep = Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL)
@@ -2390,7 +2561,7 @@ _INI_PALETTE = {
     True: {  # dark
         "section": "#f0b84d", "key": "#5fd6cb", "eq": "#5a6172",
         "val": "#d7d3cb", "num": "#c9a9e6", "bool": "#7fd1a6",
-        "comment": "#5a6172",
+        "comment": "#6d7488",
     },
     False: {  # light
         "section": "#b07818", "key": "#1f8f86", "eq": "#9a948c",
@@ -3006,15 +3177,18 @@ class WCM(Gtk.ApplicationWindow):
             return SIDE_PANEL_W
         return SIDE_INIPANEL_W
 
+    def _side_toggle_icon_name(s, open_):
+        return "sidebar-hide-right-symbolic" if open_ else "sidebar-show-right-symbolic"
+
     def _set_side_panel(s, open_):
         if s._side_open == open_:
             return
         s._side_open = open_
         # Keep every "show/collapse panel" button (main + plugin panels) in sync.
-        for lbl in getattr(s, "_side_toggle_lbls", []):
-            lbl.set_text("\u203a" if open_ else "\u2039")
+        for img in getattr(s, "_side_toggle_imgs", []):
+            img.set_from_icon_name(s._side_toggle_icon_name(open_))
         for btn in getattr(s, "_side_toggle_btns", []):
-            btn.set_tooltip_text("Collapse panel" if open_ else "Show panel")
+            btn.set_tooltip_text("Hide side panel" if open_ else "Show side panel")
         if open_:
             s.left_stack.set_visible_child_name("thin")
             # Capture the panel-less width only when we're starting from a fully
@@ -3119,6 +3293,7 @@ class WCM(Gtk.ApplicationWindow):
         s.left_stack.set_size_request(0, -1)
         s.left_stack.set_hexpand(False)
         s.left_stack.set_halign(Gtk.Align.START)
+        s._left_panel_size_group = Gtk.SizeGroup(mode=Gtk.SizeGroupMode.HORIZONTAL)
         ml = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
 
         s._left_content = Gtk.Revealer()
@@ -3134,6 +3309,8 @@ class WCM(Gtk.ApplicationWindow):
         fl.add_css_class("filter-label")
         inner.append(fl)
         s.search_entry = Gtk.SearchEntry()
+        s.search_entry.add_css_class("plugin-search")
+        s.search_entry.set_placeholder_text("Search plugins…")
         s.search_entry.set_margin_start(14)
         s.search_entry.set_margin_end(14)
         s.search_entry.set_margin_top(8)
@@ -3190,7 +3367,7 @@ class WCM(Gtk.ApplicationWindow):
         theme_box.append(light_icon)
         inner.append(theme_box)
         inner.append(s._make_side_toggle_btn())
-        disp_btn = s._make_button("DISPLAY", "preferences-desktop-display")
+        disp_btn = s._make_button("Display", "preferences-desktop-display")
         disp_btn.add_css_class("action-btn")
         disp_btn.set_margin_start(14)
         disp_btn.set_margin_end(14)
@@ -3215,6 +3392,7 @@ class WCM(Gtk.ApplicationWindow):
         inner.append(cb)
         s._left_content.set_child(inner)
         ml.append(s._left_content)
+        s._left_panel_size_group.add_widget(ml)
         s.left_stack.add_named(ml, "main")
         pl = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         s.pnl = Gtk.Label()
@@ -3299,6 +3477,7 @@ class WCM(Gtk.ApplicationWindow):
         bb.set_margin_bottom(14)
         bb.connect("clicked", lambda w: s.open_page(None))
         pl.append(bb)
+        s._left_panel_size_group.add_widget(pl)
         s.left_stack.add_named(pl, "plugin")
 
 
@@ -3346,6 +3525,7 @@ class WCM(Gtk.ApplicationWindow):
         dbb.set_margin_bottom(14)
         dbb.connect("clicked", lambda w: s.open_page(None))
         dlp.append(dbb)
+        s._left_panel_size_group.add_widget(dlp)
         s.left_stack.add_named(dlp, "display")
         gb.append(s.left_stack)
         s.main_stack = Gtk.Stack()
@@ -3431,7 +3611,7 @@ class WCM(Gtk.ApplicationWindow):
         turn collapses the left rail to the thin strip for consistency."""
         if not hasattr(s, "_side_toggle_btns"):
             s._side_toggle_btns = []
-            s._side_toggle_lbls = []
+            s._side_toggle_imgs = []
         open_ = getattr(s, "_side_open", False)
         btn = Gtk.Button()
         btn.add_css_class("wiki-nav")
@@ -3439,15 +3619,15 @@ class WCM(Gtk.ApplicationWindow):
         btn.set_margin_start(14)
         btn.set_margin_end(14)
         btn.set_margin_bottom(8)
-        lbl = Gtk.Label(label="\u203a" if open_ else "\u2039")
-        btn.set_child(lbl)
-        btn.set_tooltip_text("Collapse panel" if open_ else "Show panel")
+        img = Gtk.Image.new_from_icon_name(s._side_toggle_icon_name(open_))
+        btn.set_child(img)
+        btn.set_tooltip_text("Hide side panel" if open_ else "Show side panel")
         btn.connect("clicked", s._toggle_side_panel)
         s._side_toggle_btns.append(btn)
-        s._side_toggle_lbls.append(lbl)
+        s._side_toggle_imgs.append(img)
         # Keep the legacy single-button references pointing at the first one.
         s._side_toggle_btn = s._side_toggle_btns[0]
-        s._side_toggle_lbl = s._side_toggle_lbls[0]
+        s._side_toggle_img = s._side_toggle_imgs[0]
         return btn
 
     def _make_button(s, text, icon):
@@ -3595,6 +3775,8 @@ class WCM(Gtk.ApplicationWindow):
                 w.check.handler_block_by_func(w._on_t)
                 w.check.set_active(en)
                 w.check.handler_unblock_by_func(w._on_t)
+                if hasattr(w, "_refresh_visual_state"):
+                    w._refresh_visual_state()
                 break
 
     def _on_pe(s, c):
@@ -3706,6 +3888,8 @@ class WCM(Gtk.ApplicationWindow):
                 w.check.handler_block_by_func(w._on_t)
                 w.check.set_active(w.plugin.enabled)
                 w.check.handler_unblock_by_func(w._on_t)
+                if hasattr(w, "_refresh_visual_state"):
+                    w._refresh_visual_state()
             # Refresh plugin page if open
             if s.current_plugin:
                 s.open_page(s.current_plugin)
@@ -3763,6 +3947,8 @@ class WCM(Gtk.ApplicationWindow):
                     w.check.handler_block_by_func(w._on_t)
                     w.check.set_active(plg.enabled)
                     w.check.handler_unblock_by_func(w._on_t)
+                    if hasattr(w, "_refresh_visual_state"):
+                        w._refresh_visual_state()
                     break
             # Update sidebar toggle
             s.ec.handler_block_by_func(s._on_pe)
