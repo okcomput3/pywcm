@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Wayfire Config Manager (WCM) — Python/GTK4 — LUXE THEME with Light/Dark toggle
+Wayfire Config Manager (WCM) — Python/GTK4 — LUXE THEME with system Light/Dark mode
 """
 import gi
 
@@ -56,6 +56,18 @@ try:
 except Exception:
     WebKit = None
     _HAVE_WEBKIT = False
+
+# Optional: lets the binding grab overlay cover panels/docks on Wayland
+# compositors that support the layer-shell protocol. Fullscreen is kept as the
+# fallback for systems without gtk4-layer-shell installed.
+try:
+    try:
+        gi.require_version("Gtk4LayerShell", "1.0")
+    except Exception:
+        pass
+    from gi.repository import Gtk4LayerShell
+except Exception:
+    Gtk4LayerShell = None
 
 from config_backend import WayfireConfigFile, PresetManager, OutputManager
 from metadata import (
@@ -135,7 +147,9 @@ def _make_css(dark=True):
 @keyframes tab-glow {{ 0% {{ box-shadow: 0 2px 4px rgba({ab},0.04); }} 50% {{ box-shadow: 0 2px 18px rgba({ab},0.18); }} 100% {{ box-shadow: 0 2px 4px rgba({ab},0.04); }} }}
 @keyframes slide-in-from-bottom {{ from {{ opacity: 0; margin-top: 20px; }} to {{ opacity: 1; margin-top: 0; }} }}
 @keyframes slide-in-from-top {{ from {{ opacity: 0; margin-top: -20px; }} to {{ opacity: 1; margin-top: 0; }} }}
-@keyframes plugin-entrance {{ 0% {{ opacity: 0; }} 100% {{ opacity: 1; }} }}
+@keyframes plugin-entrance {{ 0% {{ opacity: 0; margin-top: 10px; }} 100% {{ opacity: 1; margin-top: 0; }} }}
+@keyframes settings-reveal {{ 0% {{ opacity: 0; margin-top: 10px; }} 100% {{ opacity: 1; margin-top: 0; }} }}
+@keyframes rail-glow {{ 0% {{ opacity: 0.88; box-shadow: 0 0 0 rgba({ab},0.00); }} 50% {{ opacity: 1; box-shadow: 0 0 20px rgba({ab},0.18); }} 100% {{ opacity: 0.90; box-shadow: 0 0 0 rgba({ab},0.00); }} }}
 @keyframes category-slide-in {{ from {{ opacity: 0; margin-start: -30px; }} to {{ opacity: 1; margin-start: 10px; }} }}
 @keyframes category-slide-out {{ from {{ opacity: 1; margin-start: 10px; }} to {{ opacity: 0; margin-start: -30px; }} }}
 .tab-enter-up {{ animation: slide-in-from-bottom 380ms cubic-bezier(0.22,1,0.36,1); }}
@@ -254,6 +268,7 @@ stack {{ transition-duration: 450ms; }}
 .category-slide-out {{ animation: category-slide-out 400ms cubic-bezier(0.22,1,0.36,1) forwards; }}
 
 .plugin-row {{ padding: 8px 10px; margin: 2px 4px; border-radius: 14px; transition: all 260ms cubic-bezier(0.22,1,0.36,1); background-color: rgba({ab},0.020); background-image: none; border: 1px solid rgba({ab},0.055); min-height: 58px; }}
+.plugin-row.card-animate {{ animation: plugin-entrance 420ms cubic-bezier(0.22,1,0.36,1) backwards; }}
 .plugin-row:hover {{ background-color: rgba({ab},0.070); border-color: rgba({ab},0.20); box-shadow: 0 6px 22px rgba(0,0,0,{'0.20' if dark else '0.06'}); }}
 .plugin-row.plugin-enabled {{ background-color: rgba({ab},0.040); border-color: rgba({ab},0.13); }}
 .plugin-row.plugin-protected {{ border-color: rgba({at},0.16); }}
@@ -270,6 +285,7 @@ stack {{ transition-duration: 450ms; }}
 .plugin-title {{ color: {'#ffffff' if dark else '#1a1510'}; font-weight: 700; }}
 .plugin-desc {{ color: @text_secondary; font-weight: 400; }}
 .option-row {{ padding: 7px 10px; border-radius: 11px; transition: all 220ms ease; border-left: 2px solid transparent; }}
+.option-row.row-reveal {{ animation: settings-reveal 300ms cubic-bezier(0.22,1,0.36,1) backwards; }}
 .option-row:hover {{ background-color: rgba({ab},0.035); }}
 .option-row.is-modified {{ background-color: rgba({ab},0.045); border-left-color: rgba({ab},0.65); }}
 .option-label {{ color: @text_secondary; font-weight: 500; transition: all 220ms ease; }}
@@ -296,7 +312,7 @@ stack {{ transition-duration: 450ms; }}
 .action-btn.back-btn {{ background-color: rgba({at},0.04); border-color: rgba({at},0.12); color: @teal; }}
 .action-btn.back-btn:hover {{ background-color: rgba({at},0.10); border-color: rgba({at},0.40); color: @teal; }}
 .grab-dialog {{ background-color: {popup_bg}; }}
-.grab-dialog label {{ color: @amber; font-weight: 500; font-size: 1.1em; }}
+.grab-dialog label {{ color: @amber; font-weight: 500; font-size: 1.1em; padding: 28px; }}
 .binding-frame {{ background-color: {'rgba(14,18,34,0.60)' if dark else 'rgba(255,255,255,0.50)'}; border: 1px solid rgba({ab},0.05); border-radius: 14px; margin-top: 3px; margin-bottom: 3px; transition: all 380ms cubic-bezier(0.22,1,0.36,1); }}
 .binding-frame:hover {{ border-color: rgba({ab},0.18); }}
 tooltip {{ background-color: {popup_bg}; border: 1px solid rgba({ab},0.18); border-radius: 10px; color: @text_primary; box-shadow: 0 6px 24px rgba(0,0,0,{'0.55' if dark else '0.10'}); }}
@@ -357,16 +373,85 @@ window.confirm-window {{ background-color: {panel_bg}; }}
 .side-rail {{ background-color: rgba({ab},0.02); border-left: 1px solid rgba({at},0.10); }}
 .side-toggle {{ min-width: 26px; min-height: 30px; padding: 4px 3px; font-size: 1.15em; font-weight: 700; color: @text_secondary; }}
 .side-toggle:hover {{ background-color: rgba({at},0.12); color: @teal; border-color: rgba({at},0.40); }}
+.thin-back-btn {{ margin-bottom: 10px; margin-start: 5px; margin-end: 5px; min-width: 34px; min-height: 34px; border-radius: 11px; color: @amber_light; transition: opacity 180ms ease; }}
+.thin-back-btn:hover {{ background-color: rgba({ab},0.14); border-color: rgba({ab},0.38); color: @text_primary; }}
+.thin-brand {{ padding: 8px 0; border-radius: 18px; animation: rail-glow 4.4s ease-in-out infinite; }}
+.thin-brand-letter {{ color: @amber; font-weight: 800; font-size: 0.86em; letter-spacing: 0.8px; opacity: 0.92; text-shadow: 0 0 10px rgba({ab},0.20); padding: 1px 0; }}
+.thin-brand-badge {{ opacity: 0.96; animation: rail-glow 4.4s ease-in-out infinite; }}
+.thin-brand-icon {{ opacity: 0.95; margin-top: 3px; margin-bottom: 3px; }}
+.stagger-0 {{ animation-delay: 0ms; }}
+.stagger-1 {{ animation-delay: 45ms; }}
+.stagger-2 {{ animation-delay: 90ms; }}
+.stagger-3 {{ animation-delay: 135ms; }}
+.stagger-4 {{ animation-delay: 180ms; }}
+.stagger-5 {{ animation-delay: 225ms; }}
+.stagger-6 {{ animation-delay: 270ms; }}
+.stagger-7 {{ animation-delay: 315ms; }}
 """
 
 
 _css_provider = None
 
 
+def _system_prefers_dark(default=True):
+    """Best-effort system light/dark detection.
+
+    Important detail: GNOME/GTK commonly reports light mode as ``default``,
+    not ``prefer-light``. Treat ``default`` as light so the app can update from
+    dark back to light while it is still open.
+    """
+    # GNOME / xdg-desktop-portal compatible preference.
+    try:
+        gs = Gio.Settings.new("org.gnome.desktop.interface")
+        scheme = (gs.get_string("color-scheme") or "").strip().strip("'\"").lower()
+        if "prefer-dark" in scheme:
+            return True
+        if "prefer-light" in scheme or scheme in ("default", ""):
+            return False
+    except Exception:
+        pass
+
+    # Shell fallback for systems where Gio.Settings cannot load the schema.
+    try:
+        r = subprocess.run(
+            ["gsettings", "get", "org.gnome.desktop.interface", "color-scheme"],
+            capture_output=True,
+            text=True,
+            timeout=1,
+        )
+        if r.returncode == 0:
+            scheme = (r.stdout or "").strip().strip("'\"").lower()
+            if "prefer-dark" in scheme:
+                return True
+            if "prefer-light" in scheme or scheme in ("default", ""):
+                return False
+    except Exception:
+        pass
+
+    settings = Gtk.Settings.get_default()
+    if settings is not None:
+        # Theme-name fallback, useful on non-GNOME GTK desktops.
+        try:
+            theme = (settings.get_property("gtk-theme-name") or "").lower()
+            if "dark" in theme:
+                return True
+            if "light" in theme:
+                return False
+        except Exception:
+            pass
+
+    # Do not use gtk-application-prefer-dark-theme as a detection fallback here.
+    # WCM sets that property itself when applying the theme for WebKit, so using
+    # it as input can trap the app in dark mode until restart.
+    return bool(default)
+
+
 def _apply_theme(dark=True):
     global _css_provider, _INI_DARK
     _INI_DARK = dark
     display = Gdk.Display.get_default()
+    if display is None:
+        return
     if _css_provider:
         Gtk.StyleContext.remove_provider_for_display(display, _css_provider)
     _css_provider = Gtk.CssProvider()
@@ -374,10 +459,9 @@ def _apply_theme(dark=True):
     Gtk.StyleContext.add_provider_for_display(
         display, _css_provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION + 100
     )
-    # Make the embedded wiki/webpage follow the same light/dark choice.
-    # WebKitGTK maps the GTK "prefer dark" setting onto the page's
-    # `prefers-color-scheme`, so flipping it here re-themes the webpage live
-    # (sites that honour the media query, like the Wayfire wiki, switch too).
+    # Let embedded WebKit pages follow the same light/dark choice as the app.
+    # The app still *detects* the system theme; this just advertises the chosen
+    # preference to embedded pages that honour prefers-color-scheme.
     settings = Gtk.Settings.get_default()
     if settings is not None:
         try:
@@ -494,22 +578,150 @@ def _keyval_to_linux(kv):
     return "KEY_" + g.upper() if g else None
 
 
+def _make_window_cover_all_surfaces(win, parent=None):
+    """Make the key-grab window cover panels/docks as well as normal windows.
+
+    On Wayland, normal fullscreen xdg-shell windows can remain below wf-shell
+    panels because those panels are layer-shell surfaces. The robust path is to
+    make the grab overlay itself a layer-shell OVERLAY surface anchored to all
+    four edges of the output. Fullscreen is only a fallback.
+    """
+    try:
+        win.set_decorated(False)
+    except Exception:
+        pass
+    try:
+        win.set_resizable(False)
+    except Exception:
+        pass
+    try:
+        win.set_focusable(True)
+    except Exception:
+        pass
+
+    root = None
+    try:
+        root = parent.get_root() if parent is not None else None
+    except Exception:
+        root = None
+
+    # Keep the grab window associated with the app, but do not make it a
+    # transient/modal layer-shell surface. Transient/modal xdg-shell behaviour
+    # can interfere with layer-shell stacking on some compositors.
+    try:
+        app = root.get_application() if root is not None else None
+        if app is not None:
+            win.set_application(app)
+    except Exception:
+        pass
+
+    if Gtk4LayerShell is not None:
+        try:
+            Gtk4LayerShell.init_for_window(win)
+
+            if hasattr(Gtk4LayerShell, "set_namespace"):
+                Gtk4LayerShell.set_namespace(win, "wayfire-config-manager-grab")
+
+            layer = getattr(Gtk4LayerShell.Layer, "OVERLAY", None)
+            if layer is not None:
+                Gtk4LayerShell.set_layer(win, layer)
+
+            # Put the overlay on the same monitor as the WCM window when GTK can
+            # resolve it; otherwise the compositor chooses the focused output.
+            try:
+                display = Gdk.Display.get_default()
+                surface = root.get_surface() if root is not None else None
+                monitor = None
+                if display is not None and surface is not None:
+                    monitor = display.get_monitor_at_surface(surface)
+                if monitor is not None and hasattr(Gtk4LayerShell, "set_monitor"):
+                    Gtk4LayerShell.set_monitor(win, monitor)
+            except Exception:
+                pass
+
+            for edge_name in ("LEFT", "RIGHT", "TOP", "BOTTOM"):
+                edge = getattr(Gtk4LayerShell.Edge, edge_name, None)
+                if edge is not None:
+                    Gtk4LayerShell.set_anchor(win, edge, True)
+                    if hasattr(Gtk4LayerShell, "set_margin"):
+                        Gtk4LayerShell.set_margin(win, edge, 0)
+
+            # Do not reserve space; just cover the whole output.
+            if hasattr(Gtk4LayerShell, "set_exclusive_zone"):
+                try:
+                    Gtk4LayerShell.set_exclusive_zone(win, -1)
+                except Exception:
+                    try:
+                        Gtk4LayerShell.set_exclusive_zone(win, 0)
+                    except Exception:
+                        pass
+
+            keyboard_mode = getattr(
+                getattr(Gtk4LayerShell, "KeyboardMode", object),
+                "EXCLUSIVE",
+                None,
+            )
+            if keyboard_mode is None:
+                keyboard_mode = getattr(
+                    getattr(Gtk4LayerShell, "KeyboardMode", object),
+                    "ON_DEMAND",
+                    None,
+                )
+            if keyboard_mode is not None and hasattr(Gtk4LayerShell, "set_keyboard_mode"):
+                Gtk4LayerShell.set_keyboard_mode(win, keyboard_mode)
+
+            # When anchored on opposite edges, let layer-shell allocate the size.
+            # Nonzero xdg-style default sizes can confuse some compositors.
+            win.set_default_size(1, 1)
+            win.set_size_request(1, 1)
+            return True
+        except Exception as e:
+            print(f"WCM: gtk4-layer-shell grab overlay failed, falling back to fullscreen: {e}")
+
+    try:
+        win.set_default_size(1920, 1080)
+        win.maximize()
+    except Exception:
+        pass
+    try:
+        win.fullscreen()
+    except Exception:
+        pass
+    return False
+
+
 class KeyGrabWindow(Gtk.Window):
     def __init__(s, parent):
         super().__init__(
             title="Waiting for Binding",
-            modal=True,
-            transient_for=parent.get_root(),
-            default_width=420,
-            default_height=130,
+            default_width=1920,
+            default_height=1080,
         )
         s.result = ""
         s._mods = set()
         s._done = False
         s.add_css_class("grab-dialog")
+
+        # Use layer-shell when available so the grab overlay sits above panels,
+        # docks and other layer surfaces. Fullscreen remains the fallback.
+        s._using_layer_shell = _make_window_cover_all_surfaces(s, parent)
+        if not s._using_layer_shell:
+            if Gtk4LayerShell is None:
+                print(
+                    "WCM: Gtk4LayerShell is not available; using fullscreen fallback. "
+                    "Wayfire/wf-shell panels may remain above the grab overlay."
+                )
+            try:
+                s.set_modal(True)
+                s.set_transient_for(parent.get_root())
+            except Exception:
+                pass
+
         s._label = Gtk.Label(label="Press a key combination\u2026\n(Escape to cancel)")
         s._label.set_halign(Gtk.Align.CENTER)
         s._label.set_valign(Gtk.Align.CENTER)
+        s._label.set_hexpand(True)
+        s._label.set_vexpand(True)
         s.set_child(s._label)
         kc = Gtk.EventControllerKey()
         kc.connect("key-pressed", s._on_kp)
@@ -519,9 +731,19 @@ class KeyGrabWindow(Gtk.Window):
         cl.set_button(0)
         cl.connect("pressed", s._on_cl)
         s.add_controller(cl)
-        # Match the original C++ WCM, which calls grab_dialog.fullscreen()
-        # so the binding-capture window covers the whole screen.
-        s.fullscreen()
+
+        # Re-assert fullscreen after mapping for compositors that ignore an
+        # early fullscreen request until the surface exists.
+        s.connect("map", lambda *_: s._ensure_covering())
+
+    def _ensure_covering(s):
+        if getattr(s, "_using_layer_shell", False):
+            return False
+        try:
+            s.fullscreen()
+        except Exception:
+            pass
+        return False
 
     def _ms(s):
         p = []
@@ -770,7 +992,7 @@ def _parse_anim(s):
 
 
 class OptionWidget(Gtk.Box):
-    def __init__(s, opt, cfg, plg):
+    def __init__(s, opt, cfg, plg, anim_index=0):
         super().__init__(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
         s.option = opt
         s.config = cfg
@@ -778,6 +1000,8 @@ class OptionWidget(Gtk.Box):
         s._block = False
         s._text_save_id = 0
         s.add_css_class("option-row")
+        s.add_css_class("row-reveal")
+        s.add_css_class(f"stagger-{anim_index % 8}")
         s.set_margin_start(4)
         s.set_margin_end(4)
         s.set_margin_top(2)
@@ -1142,6 +1366,7 @@ class PluginPage(Gtk.Notebook):
         s._lt = 0
         s._br = False
         s._rules_done = False
+        s._reveal_i = 0
         for g in plg.option_groups:
             if g.type != OptionType.GROUP or g.hidden:
                 continue
@@ -1158,13 +1383,16 @@ class PluginPage(Gtk.Notebook):
                     continue
                 try:
                     if o.type == OptionType.SUBGROUP and o.options:
-                        bx.append(SubgroupWidget(o, cfg, plg))
+                        sgw = SubgroupWidget(o, cfg, plg)
+                        s._tag_reveal(sgw)
+                        bx.append(sgw)
                     elif o.type == OptionType.DYNAMIC_LIST:
                         w = s._make_dynlist(o, cfg, plg)
                         if w:
+                            s._tag_reveal(w)
                             bx.append(w)
                     elif o.type != OptionType.GROUP:
-                        bx.append(OptionWidget(o, cfg, plg))
+                        bx.append(OptionWidget(o, cfg, plg, s._next_reveal_index()))
                 except Exception as e:
                     bx.append(Gtk.Label(label=f"\u26a0 {o.name}: {e}"))
                     traceback.print_exc()
@@ -1182,8 +1410,22 @@ class PluginPage(Gtk.Notebook):
             bx.set_margin_top(10)
             bx.set_margin_bottom(10)
             so = cfg.get_section_options(plg.name)
-            bx.append(s._make_winrules_box(cfg, plg, so, "rule_"))
+            wr = s._make_winrules_box(cfg, plg, so, "rule_")
+            s._tag_reveal(wr)
+            bx.append(wr)
             s._append_page("Rules", bx, s._pending_add)
+
+    def _next_reveal_index(s):
+        i = s._reveal_i
+        s._reveal_i += 1
+        return i
+
+    def _tag_reveal(s, widget):
+        try:
+            widget.add_css_class("row-reveal")
+            widget.add_css_class(f"stagger-{s._next_reveal_index() % 8}")
+        except Exception:
+            pass
 
     @staticmethod
     def _is_winrules(plg):
@@ -1536,13 +1778,15 @@ class PluginPage(Gtk.Notebook):
 
 
 class PluginButtonWidget(Gtk.Box):
-    def __init__(s, plg, wcm):
+    def __init__(s, plg, wcm, anim_index=0):
         super().__init__(orientation=Gtk.Orientation.HORIZONTAL, spacing=9)
         s.plugin = plg
         s.wcm = wcm
         s.set_halign(Gtk.Align.START)
         s.set_valign(Gtk.Align.CENTER)
         s.add_css_class("plugin-row")
+        s.add_css_class("card-animate")
+        s.add_css_class(f"stagger-{anim_index % 8}")
         if plg.is_core_plugin or plg.type == PluginType.WF_SHELL:
             s.add_css_class("plugin-protected")
         s.check = Gtk.CheckButton()
@@ -1683,11 +1927,12 @@ class MainPage(Gtk.ScrolledWindow):
             ci = get_category_index(p.category)
             cn = CATEGORIES[ci][0]
             _, fb, _ = s.cd[cn]
-            w = PluginButtonWidget(p, wcm)
+            w = PluginButtonWidget(p, wcm, len(s._pw))
             s.sg.add_widget(w)
             fb.append(w)
             s._pw.append(w)
         s.set_child(vb)
+        s._sync_category_visibility()
 
     def _ff(s, child):
         w = child.get_child()
@@ -1704,146 +1949,40 @@ class MainPage(Gtk.ScrolledWindow):
 
     def set_filter(s, text):
         s._ft = text.lower()
-        for cn in CATEGORY_NAMES:
-            _, fb, _ = s.cd[cn]
-            child = fb.get_first_child()
-            while child:
-                child.add_css_class("filter-hidden")
-                child = child.get_next_sibling()
-        for cn in CATEGORY_NAMES:
-            _, fb, _ = s.cd[cn]
+        for _, fb, _ in s.cd.values():
             fb.invalidate_filter()
-        GLib.idle_add(s._reveal)
+        s._sync_category_visibility()
 
-    def _reveal(s):
-        delay = 0
-        for cn in CATEGORY_NAMES:
-            title, fb, sep = s.cd[cn]
-            vis = False
-            child = fb.get_first_child()
-            while child:
-                w = child.get_child()
-                if w and hasattr(w, "plugin"):
-                    p = w.plugin
-                    if (
-                        not s._ft
-                        or s._ft in p.name.lower()
-                        or s._ft in p.disp_name.lower()
-                        or s._ft in p.tooltip.lower()
-                    ):
-                        vis = True
-                        d = delay
-                        GLib.timeout_add(
-                            d,
-                            lambda c=child: (
-                                c.remove_css_class("filter-hidden") or False
-                            ),
-                        )
-                        delay += 50
-                child = child.get_next_sibling()
-            was_visible = title.get_visible()
-            if vis and not was_visible:
-                title.set_visible(True)
-                fb.set_visible(True)
-                sep.set_visible(True)
-                title.remove_css_class("category-slide-out")
-                title.remove_css_class("category-slide")
-                GLib.timeout_add(
-                    10, lambda t=title: (t.add_css_class("category-slide") or False)
-                )
-            elif vis and was_visible:
-                title.remove_css_class("category-slide")
-                GLib.timeout_add(
-                    10, lambda t=title: (t.add_css_class("category-slide") or False)
-                )
-            elif not vis and was_visible:
-                title.remove_css_class("category-slide")
-                title.add_css_class("category-slide-out")
-                GLib.timeout_add(
-                    420,
-                    lambda t=title, f=fb, sp=sep: (
-                        t.set_visible(False)
-                        or f.set_visible(False)
-                        or sp.set_visible(False)
-                        or t.remove_css_class("category-slide-out")
-                        or False
-                    ),
-                )
+    def _category_has_visible_plugins(s, fb):
+        child = fb.get_first_child()
+        while child:
+            w = child.get_child()
+            if w and hasattr(w, "plugin") and s._ff(child):
+                return True
+            child = child.get_next_sibling()
         return False
 
+    def _sync_category_visibility(s):
+        """Hide category headers/separators when filtering leaves no plugins.
 
-# ----------------------------------------------------------------------
-# DISPLAY (output) configuration
-# ----------------------------------------------------------------------
+        Without this, searches can leave a lone category label like "Other"
+        visible even though none of that category's plugin cards match.
+        """
+        visible_sections = []
+        for cn, (header, fb, sep) in s.cd.items():
+            visible = s._category_has_visible_plugins(fb)
+            header.set_visible(visible)
+            fb.set_visible(visible)
+            visible_sections.append((visible, sep))
 
-
-def _fmt_refresh(mhz):
-    """Format a refresh rate (millihertz) for display, e.g. 60000 -> '60 Hz'."""
-    if not mhz:
-        return ""
-    hz = mhz / 1000.0
-    if abs(hz - round(hz)) < 0.0005:
-        return f"{int(round(hz))} Hz"
-    return f"{hz:.3f}".rstrip("0").rstrip(".") + " Hz"
-
-
-def _parse_refresh(text):
-    """Parse a refresh string ('60 Hz', '59.951') back to millihertz."""
-    t = (text or "").lower().replace("hz", "").strip()
-    if not t:
-        return 0
-    try:
-        return int(round(float(t) * 1000))
-    except ValueError:
-        return 0
-
-
-def _build_mode(res, refresh_mhz):
-    """Compose a wayfire 'mode' value from a resolution and refresh (mHz)."""
-    res = (res or "").strip()
-    if not res:
-        return "default"
-    if refresh_mhz:
-        return f"{res}@{refresh_mhz}"
-    return res
-
-
-def _parse_mode(mode_str):
-    """Split a wayfire 'mode' value into (resolution, refresh_mHz, is_off)."""
-    if mode_str is None:
-        return (None, 0, False)
-    m = mode_str.strip()
-    if m == "off":
-        return (None, 0, True)
-    if m == "" or m == "default" or m.startswith("mirror"):
-        return (None, 0, False)
-    res, refresh = m, 0
-    if "@" in m:
-        res, rf = m.split("@", 1)
-        try:
-            val = float(rf.strip())
-            # Values < 1000 are Hz (e.g. 60, 59.951); >= 1000 are already mHz.
-            refresh = int(round(val if val >= 1000 else val * 1000))
-        except ValueError:
-            refresh = 0
-    res = res.strip()
-    if not re.match(r"^\d+x\d+$", res):
-        res = None
-    return (res, refresh, False)
-
-
-def _mode_human(res, ref_text):
-    """Human label for a resolution + refresh, e.g. '3440x1440@143.923'."""
-    res = (res or "").strip()
-    if not res:
-        return "default"
-    rf = _parse_refresh(ref_text)
-    if rf > 0:
-        hz = rf / 1000.0
-        hzs = f"{hz:.3f}".rstrip("0").rstrip(".")
-        return f"{res}@{hzs}"
-    return res
-
+        remaining_visible = sum(1 for visible, _sep in visible_sections if visible)
+        seen_visible = 0
+        for visible, sep in visible_sections:
+            if visible:
+                seen_visible += 1
+                sep.set_visible(seen_visible < remaining_visible)
+            else:
+                sep.set_visible(False)
 
 class _DisplayConfirmDialog(Gtk.Window):
     """Floating "Confirm Display Changes" prompt with an auto-revert countdown.
@@ -3129,8 +3268,10 @@ class WCM(Gtk.ApplicationWindow):
         )
         _resolve_icon_dirs()
         s.current_plugin = None
-        s._dark = True
+        s._dark = _system_prefers_dark(True)
+        _apply_theme(s._dark)
         s._build_ui()
+        s._watch_system_theme()
         kc = Gtk.EventControllerKey()
         kc.connect("key-pressed", s._on_key)
         s.add_controller(kc)
@@ -3277,6 +3418,10 @@ class WCM(Gtk.ApplicationWindow):
         panel is expanded — in which case the left rail stays collapsed to the
         thin strip. Called after every navigation so the plugin/display/main
         panels and the expandable side panel never fight over the left stack."""
+        if hasattr(s, "_thin_back_btn"):
+            show_back = getattr(s, "_page_left_child", "main") == "plugin"
+            s._thin_back_btn.set_opacity(1.0 if show_back else 0.0)
+            s._thin_back_btn.set_sensitive(show_back)
         if getattr(s, "_side_open", False):
             s.left_stack.set_visible_child_name("thin")
         else:
@@ -3350,22 +3495,6 @@ class WCM(Gtk.ApplicationWindow):
         spacer = Gtk.Box()
         spacer.set_vexpand(True)
         inner.append(spacer)
-        theme_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
-        theme_box.set_halign(Gtk.Align.CENTER)
-        theme_box.set_margin_bottom(10)
-        theme_box.add_css_class("theme-switch-box")
-        dark_icon = Gtk.Label(label="\u263e")
-        dark_icon.set_tooltip_text("Dark")
-        theme_box.append(dark_icon)
-        s._theme_switch = Gtk.Switch()
-        s._theme_switch.set_active(False)
-        s._theme_switch.set_valign(Gtk.Align.CENTER)
-        s._theme_switch.connect("notify::active", s._on_theme_toggle)
-        theme_box.append(s._theme_switch)
-        light_icon = Gtk.Label(label="\u2600")
-        light_icon.set_tooltip_text("Light")
-        theme_box.append(light_icon)
-        inner.append(theme_box)
         inner.append(s._make_side_toggle_btn())
         disp_btn = s._make_button("Display", "preferences-desktop-display")
         disp_btn.add_css_class("action-btn")
@@ -3543,15 +3672,64 @@ class WCM(Gtk.ApplicationWindow):
         thin.set_hexpand(False)
         thin.set_halign(Gtk.Align.START)
         thin.add_css_class("left-panel")
-        back_thin = Gtk.Button.new_from_icon_name("go-previous")
-        back_thin.add_css_class("flat")
+        back_thin = Gtk.Button.new_from_icon_name("go-previous-symbolic")
+        back_thin.add_css_class("wiki-nav")
+        back_thin.add_css_class("side_toggle_btn")
         back_thin.set_tooltip_text("Close panel")
-        back_thin.set_margin_top(8)
+        back_thin.set_margin_start(14)
+        back_thin.set_margin_end(14)
+        back_thin.set_margin_top(10)
+        back_thin.set_margin_bottom(8)
         back_thin.connect("clicked", s._toggle_side_panel)
         thin.append(back_thin)
+
+        brand = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
+        brand.set_vexpand(True)
+        brand.set_valign(Gtk.Align.CENTER)
+        brand.set_halign(Gtk.Align.CENTER)
+        brand.add_css_class("thin-brand")
+
+        badge_path = s._make_wayfire_rail_badge()
+        if badge_path:
+            badge = Gtk.Picture.new_for_filename(badge_path)
+            badge.set_size_request(40, 320)
+            badge.set_can_shrink(True)
+            badge.add_css_class("thin-brand-badge")
+            brand.append(badge)
+        else:
+            # Fallback for systems that cannot render the SVG badge: still show
+            # a neat stacked rail without using unsupported Gtk.Label rotation.
+            rail_icon = (
+                find_icon("wcm.svg")
+                or find_icon("wcm.png")
+                or find_icon("wayfire.svg")
+                or find_icon("wayfire.png")
+            )
+            if rail_icon:
+                top_img = Gtk.Image.new_from_file(rail_icon)
+                top_img.set_pixel_size(18)
+                top_img.add_css_class("thin-brand-icon")
+                brand.append(top_img)
+            for ch in "WAYFIRE":
+                ll = Gtk.Label(label=ch)
+                ll.add_css_class("thin-brand-letter")
+                ll.set_halign(Gtk.Align.CENTER)
+                brand.append(ll)
+
+        thin.append(brand)
+
+        s._thin_back_btn = Gtk.Button.new_from_icon_name("go-previous")
+        s._thin_back_btn.add_css_class("thin-back-btn")
+        s._thin_back_btn.set_tooltip_text("Back to plugin selection")
+        s._thin_back_btn.set_opacity(0.0)
+        s._thin_back_btn.set_sensitive(False)
+        s._thin_back_btn.connect("clicked", lambda w: s.open_page(None))
+        thin.append(s._thin_back_btn)
+
         s.left_stack.add_named(thin, "thin")
         s.left_stack.set_visible_child_name("main")
         s.left_stack.set_hhomogeneous(False)
+        s._sync_left_panel()
 
         # --- Live .ini panel + embedded wiki on the right ---
         s.ini_panel = LiveIniPanel()
@@ -3603,6 +3781,75 @@ class WCM(Gtk.ApplicationWindow):
         s.set_child(gb)
         s.plugin_page = None
         s.display_page = None
+
+    def _make_wayfire_rail_badge(s):
+        """Create a small SVG badge used in the collapsed left rail.
+
+        This avoids Gtk.Label.set_angle(), which is not available in GTK4, and
+        avoids relying on CSS transforms, which some GTK themes/builds ignore.
+        """
+        try:
+            cache_dir = os.path.join(tempfile.gettempdir(), "pywcm")
+            os.makedirs(cache_dir, exist_ok=True)
+            path = os.path.join(cache_dir, "wayfire-rail-badge.svg")
+            if not os.path.exists(path):
+                svg = """<svg xmlns="http://www.w3.org/2000/svg" width="44" height="320" viewBox="0 0 44 320">
+  <defs>
+    <filter id="glow" x="-80%" y="-80%" width="260%" height="260%">
+      <feGaussianBlur stdDeviation="2.2" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <linearGradient id="gold" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffd36c"/>
+      <stop offset="0.55" stop-color="#d99b20"/>
+      <stop offset="1" stop-color="#9f6812"/>
+    </linearGradient>
+  </defs>
+
+  <g opacity="0.95">
+    <text x="22" y="170"
+          transform="rotate(-90 22 170)"
+          text-anchor="middle"
+          dominant-baseline="middle"
+          font-family="Cantarell, Noto Sans, Segoe UI, sans-serif"
+          font-size="25"
+          font-weight="900"
+          letter-spacing="6.5"
+          fill="url(#gold)"
+          filter="url(#glow)">WAYFIRE</text>
+  </g>
+
+  <g transform="translate(22 28)" filter="url(#glow)">
+    <path d="M0,-16 L14,-8 L14,8 L0,16 L-14,8 L-14,-8 Z"
+          fill="#111827" stroke="#d99b20" stroke-width="1.8"/>
+    <path d="M0,-11 C8,-10 12,-2 7,5 C4,11 -5,11 -9,5 C-12,-2 -7,-10 0,-11Z"
+          fill="#e94124"/>
+    <path d="M0,-12 C-6,-6 -6,4 0,10 C6,4 6,-6 0,-12Z"
+          fill="#f2b11b"/>
+    <path d="M-10,2 C-3,2 5,-3 9,-8 C10,1 6,9 -2,11 C-6,9 -9,6 -10,2Z"
+          fill="#11a37f"/>
+  </g>
+
+  <g transform="translate(22 292)" filter="url(#glow)">
+    <path d="M0,-16 L14,-8 L14,8 L0,16 L-14,8 L-14,-8 Z"
+          fill="#111827" stroke="#d99b20" stroke-width="1.8"/>
+    <path d="M0,-11 C8,-10 12,-2 7,5 C4,11 -5,11 -9,5 C-12,-2 -7,-10 0,-11Z"
+          fill="#e94124"/>
+    <path d="M0,-12 C-6,-6 -6,4 0,10 C6,4 6,-6 0,-12Z"
+          fill="#f2b11b"/>
+    <path d="M-10,2 C-3,2 5,-3 9,-8 C10,1 6,9 -2,11 C-6,9 -9,6 -10,2Z"
+          fill="#11a37f"/>
+  </g>
+</svg>
+"""
+                with open(path, "w", encoding="utf-8") as fh:
+                    fh.write(svg)
+            return path
+        except Exception:
+            return None
 
     def _make_side_toggle_btn(s):
         """Create a 'show / collapse side panel' button. Several of these can
@@ -3702,13 +3949,45 @@ class WCM(Gtk.ApplicationWindow):
             return s.wf_shell_config
         return s.config
 
-    def _on_theme_toggle(s, switch, pspec):
-        s._dark = not switch.get_active()
-        _apply_theme(s._dark)
+    def _sync_system_theme(s, *_args):
+        dark = _system_prefers_dark(getattr(s, "_dark", True))
+        if dark == getattr(s, "_dark", None):
+            return False
+        s._dark = dark
+        _apply_theme(dark)
         # The editor's syntax colours are inline Pango markup, so re-render it
         # to pick up the new palette (the CSS-based chrome updates on its own).
         if getattr(s, "ini_panel", None) is not None:
             s.ini_panel.restyle()
+        return False
+
+    def _watch_system_theme(s):
+        """Follow the desktop light/dark preference while the app is open."""
+        settings = Gtk.Settings.get_default()
+        if settings is not None:
+            for prop in (
+                "gtk-theme-name",
+                "gtk-application-prefer-dark-theme",
+            ):
+                try:
+                    settings.connect(f"notify::{prop}", s._sync_system_theme)
+                except Exception:
+                    pass
+        try:
+            s._color_scheme_settings = Gio.Settings.new("org.gnome.desktop.interface")
+            s._color_scheme_settings.connect(
+                "changed::color-scheme", s._sync_system_theme
+            )
+        except Exception:
+            s._color_scheme_settings = None
+
+        # Some Wayfire / GTK setups do not emit a GTK notify signal when the
+        # portal/GSettings colour scheme moves back from prefer-dark to default.
+        # A light polling watch keeps the UI synced both ways without requiring
+        # a restart.
+        s._system_theme_watch_id = GLib.timeout_add_seconds(
+            1, lambda: (s._sync_system_theme(), True)[1]
+        )
 
     def _on_search(s, entry):
         s.main_page.set_filter(entry.get_text())
@@ -3992,7 +4271,7 @@ class WCMApp(Gtk.Application):
 
     def do_startup(s):
         Gtk.Application.do_startup(s)
-        _apply_theme(True)
+        _apply_theme(_system_prefers_dark(True))
 
     def do_activate(s):
         if not s.window:
