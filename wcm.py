@@ -2,11 +2,74 @@
 """
 Wayfire Config Manager (WCM) — Python/GTK4 — LUXE THEME with system Light/Dark mode
 """
+import sys, os, subprocess, ctypes.util
+
+
+def _bootstrap_gtk4_layer_shell_preload():
+    """Preload gtk4-layer-shell before GTK/Wayland libraries are imported.
+
+    gtk4-layer-shell needs to hook Wayland symbols very early. If it is loaded
+    after GTK/GDK/libwayland, it prints warnings like:
+
+        Failed to initialise layer surface.
+        GTK4 Layer Shell may have been linked after libwayland.
+
+    and the grab overlay cannot cover panels. Re-exec once with LD_PRELOAD when
+    the library is installed so Gtk4LayerShell can initialise correctly.
+    """
+    if not os.environ.get("WAYLAND_DISPLAY"):
+        return
+    if os.environ.get("PYWCM_LAYER_SHELL_PRELOADED") == "1":
+        return
+    if os.environ.get("PYWCM_NO_LAYER_SHELL_PRELOAD") == "1":
+        return
+
+    old_preload = os.environ.get("LD_PRELOAD", "")
+    if "gtk4-layer-shell" in old_preload:
+        os.environ["PYWCM_LAYER_SHELL_PRELOADED"] = "1"
+        return
+
+    lib = None
+    try:
+        lib = ctypes.util.find_library("gtk4-layer-shell")
+    except Exception:
+        lib = None
+
+    if not lib:
+        try:
+            r = subprocess.run(
+                ["ldconfig", "-p"],
+                capture_output=True,
+                text=True,
+                timeout=1,
+            )
+            for line in (r.stdout or "").splitlines():
+                if "libgtk4-layer-shell.so" in line and "=>" in line:
+                    lib = line.rsplit("=>", 1)[1].strip()
+                    break
+        except Exception:
+            lib = None
+
+    if not lib:
+        return
+
+    env = os.environ.copy()
+    env["LD_PRELOAD"] = lib if not old_preload else f"{lib} {old_preload}"
+    env["PYWCM_LAYER_SHELL_PRELOADED"] = "1"
+
+    try:
+        os.execvpe(sys.executable, [sys.executable] + sys.argv, env)
+    except Exception as e:
+        print(f"WCM: could not re-exec with gtk4-layer-shell preloaded: {e}")
+
+
+_bootstrap_gtk4_layer_shell_preload()
+
 import gi
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("Gdk", "4.0")
-import sys, os, subprocess, glob, shutil, traceback, re
+import glob, shutil, traceback, re
 from gi.repository import Gtk, Gdk, GLib, Gio, GdkPixbuf, Pango
 
 
@@ -710,6 +773,11 @@ class KeyGrabWindow(Gtk.Window):
                 print(
                     "WCM: Gtk4LayerShell is not available; using fullscreen fallback. "
                     "Wayfire/wf-shell panels may remain above the grab overlay."
+                )
+            elif os.environ.get("PYWCM_LAYER_SHELL_PRELOADED") != "1":
+                print(
+                    "WCM: Gtk4LayerShell is present but was not preloaded early. "
+                    "Panels may remain above the grab overlay."
                 )
             try:
                 s.set_modal(True)
