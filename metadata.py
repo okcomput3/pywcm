@@ -259,6 +259,8 @@ def _parse_plugin_node(plugin_node):
                 gtag = str(gchild.tag)
                 if gtag == '_short':
                     group.name = _text(gchild)
+                elif gtag == '_long':
+                    group.tooltip = _text(gchild)
                 elif gtag == 'option':
                     opt = _parse_option(gchild, plugin.name)
                     group.options.append(opt)
@@ -269,6 +271,8 @@ def _parse_plugin_node(plugin_node):
                         sgtag = str(sgchild.tag)
                         if sgtag == '_short':
                             subgroup.name = _text(sgchild)
+                        elif sgtag == '_long':
+                            subgroup.tooltip = _text(sgchild)
                         elif sgtag == 'option':
                             opt = _parse_option(sgchild, plugin.name)
                             subgroup.options.append(opt)

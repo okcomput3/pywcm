@@ -2,74 +2,12 @@
 """
 Wayfire Config Manager (WCM) — Python/GTK4 — LUXE THEME with system Light/Dark mode
 """
-import sys, os, subprocess, ctypes.util
-
-
-def _bootstrap_gtk4_layer_shell_preload():
-    """Preload gtk4-layer-shell before GTK/Wayland libraries are imported.
-
-    gtk4-layer-shell needs to hook Wayland symbols very early. If it is loaded
-    after GTK/GDK/libwayland, it prints warnings like:
-
-        Failed to initialise layer surface.
-        GTK4 Layer Shell may have been linked after libwayland.
-
-    and the grab overlay cannot cover panels. Re-exec once with LD_PRELOAD when
-    the library is installed so Gtk4LayerShell can initialise correctly.
-    """
-    if not os.environ.get("WAYLAND_DISPLAY"):
-        return
-    if os.environ.get("PYWCM_LAYER_SHELL_PRELOADED") == "1":
-        return
-    if os.environ.get("PYWCM_NO_LAYER_SHELL_PRELOAD") == "1":
-        return
-
-    old_preload = os.environ.get("LD_PRELOAD", "")
-    if "gtk4-layer-shell" in old_preload:
-        os.environ["PYWCM_LAYER_SHELL_PRELOADED"] = "1"
-        return
-
-    lib = None
-    try:
-        lib = ctypes.util.find_library("gtk4-layer-shell")
-    except Exception:
-        lib = None
-
-    if not lib:
-        try:
-            r = subprocess.run(
-                ["ldconfig", "-p"],
-                capture_output=True,
-                text=True,
-                timeout=1,
-            )
-            for line in (r.stdout or "").splitlines():
-                if "libgtk4-layer-shell.so" in line and "=>" in line:
-                    lib = line.rsplit("=>", 1)[1].strip()
-                    break
-        except Exception:
-            lib = None
-
-    if not lib:
-        return
-
-    env = os.environ.copy()
-    env["LD_PRELOAD"] = lib if not old_preload else f"{lib} {old_preload}"
-    env["PYWCM_LAYER_SHELL_PRELOADED"] = "1"
-
-    try:
-        os.execvpe(sys.executable, [sys.executable] + sys.argv, env)
-    except Exception as e:
-        print(f"WCM: could not re-exec with gtk4-layer-shell preloaded: {e}")
-
-
-_bootstrap_gtk4_layer_shell_preload()
-
 import gi
+
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("Gdk", "4.0")
-import glob, shutil, traceback, re
+import sys, os, subprocess, glob, shutil, traceback, re
 from gi.repository import Gtk, Gdk, GLib, Gio, GdkPixbuf, Pango
 
 
@@ -119,18 +57,6 @@ try:
 except Exception:
     WebKit = None
     _HAVE_WEBKIT = False
-
-# Optional: lets the binding grab overlay cover panels/docks on Wayland
-# compositors that support the layer-shell protocol. Fullscreen is kept as the
-# fallback for systems without gtk4-layer-shell installed.
-try:
-    try:
-        gi.require_version("Gtk4LayerShell", "1.0")
-    except Exception:
-        pass
-    from gi.repository import Gtk4LayerShell
-except Exception:
-    Gtk4LayerShell = None
 
 from config_backend import WayfireConfigFile, PresetManager, OutputManager
 from metadata import (
@@ -642,19 +568,15 @@ def _keyval_to_linux(kv):
 
 
 def _make_window_cover_all_surfaces(win, parent=None):
-    """Make the key-grab window cover panels/docks as well as normal windows.
+    """Make the key-grab window a real fullscreen toplevel.
 
-    On Wayland, normal fullscreen xdg-shell windows can remain below wf-shell
-    panels because those panels are layer-shell surfaces. The robust path is to
-    make the grab overlay itself a layer-shell OVERLAY surface anchored to all
-    four edges of the output. Fullscreen is only a fallback.
+    This follows the behavior that works in the C++ WCM: use a normal
+    independent GTK toplevel and call Gtk.Window.fullscreen(). Do not fake
+    fullscreen by setting output-sized geometry, and do not make the grab window
+    transient/modal.
     """
     try:
         win.set_decorated(False)
-    except Exception:
-        pass
-    try:
-        win.set_resizable(False)
     except Exception:
         pass
     try:
@@ -668,9 +590,9 @@ def _make_window_cover_all_surfaces(win, parent=None):
     except Exception:
         root = None
 
-    # Keep the grab window associated with the app, but do not make it a
-    # transient/modal layer-shell surface. Transient/modal xdg-shell behaviour
-    # can interfere with layer-shell stacking on some compositors.
+    # Keep the window associated with the app if possible, but do not make it a
+    # transient/modal dialog. On Wayland, fullscreening a dialog can be handled
+    # differently by the compositor.
     try:
         app = root.get_application() if root is not None else None
         if app is not None:
@@ -678,78 +600,10 @@ def _make_window_cover_all_surfaces(win, parent=None):
     except Exception:
         pass
 
-    if Gtk4LayerShell is not None:
-        try:
-            Gtk4LayerShell.init_for_window(win)
-
-            if hasattr(Gtk4LayerShell, "set_namespace"):
-                Gtk4LayerShell.set_namespace(win, "wayfire-config-manager-grab")
-
-            layer = getattr(Gtk4LayerShell.Layer, "OVERLAY", None)
-            if layer is not None:
-                Gtk4LayerShell.set_layer(win, layer)
-
-            # Put the overlay on the same monitor as the WCM window when GTK can
-            # resolve it; otherwise the compositor chooses the focused output.
-            try:
-                display = Gdk.Display.get_default()
-                surface = root.get_surface() if root is not None else None
-                monitor = None
-                if display is not None and surface is not None:
-                    monitor = display.get_monitor_at_surface(surface)
-                if monitor is not None and hasattr(Gtk4LayerShell, "set_monitor"):
-                    Gtk4LayerShell.set_monitor(win, monitor)
-            except Exception:
-                pass
-
-            for edge_name in ("LEFT", "RIGHT", "TOP", "BOTTOM"):
-                edge = getattr(Gtk4LayerShell.Edge, edge_name, None)
-                if edge is not None:
-                    Gtk4LayerShell.set_anchor(win, edge, True)
-                    if hasattr(Gtk4LayerShell, "set_margin"):
-                        Gtk4LayerShell.set_margin(win, edge, 0)
-
-            # Do not reserve space; just cover the whole output.
-            if hasattr(Gtk4LayerShell, "set_exclusive_zone"):
-                try:
-                    Gtk4LayerShell.set_exclusive_zone(win, -1)
-                except Exception:
-                    try:
-                        Gtk4LayerShell.set_exclusive_zone(win, 0)
-                    except Exception:
-                        pass
-
-            keyboard_mode = getattr(
-                getattr(Gtk4LayerShell, "KeyboardMode", object),
-                "EXCLUSIVE",
-                None,
-            )
-            if keyboard_mode is None:
-                keyboard_mode = getattr(
-                    getattr(Gtk4LayerShell, "KeyboardMode", object),
-                    "ON_DEMAND",
-                    None,
-                )
-            if keyboard_mode is not None and hasattr(Gtk4LayerShell, "set_keyboard_mode"):
-                Gtk4LayerShell.set_keyboard_mode(win, keyboard_mode)
-
-            # When anchored on opposite edges, let layer-shell allocate the size.
-            # Nonzero xdg-style default sizes can confuse some compositors.
-            win.set_default_size(1, 1)
-            win.set_size_request(1, 1)
-            return True
-        except Exception as e:
-            print(f"WCM: gtk4-layer-shell grab overlay failed, falling back to fullscreen: {e}")
-
-    try:
-        win.set_default_size(1920, 1080)
-        win.maximize()
-    except Exception:
-        pass
     try:
         win.fullscreen()
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"WCM: Gtk.Window.fullscreen() failed for grab overlay: {e}")
     return False
 
 
@@ -757,33 +611,18 @@ class KeyGrabWindow(Gtk.Window):
     def __init__(s, parent):
         super().__init__(
             title="Waiting for Binding",
-            default_width=1920,
-            default_height=1080,
+            default_width=420,
+            default_height=130,
         )
         s.result = ""
         s._mods = set()
         s._done = False
         s.add_css_class("grab-dialog")
 
-        # Use layer-shell when available so the grab overlay sits above panels,
-        # docks and other layer surfaces. Fullscreen remains the fallback.
-        s._using_layer_shell = _make_window_cover_all_surfaces(s, parent)
-        if not s._using_layer_shell:
-            if Gtk4LayerShell is None:
-                print(
-                    "WCM: Gtk4LayerShell is not available; using fullscreen fallback. "
-                    "Wayfire/wf-shell panels may remain above the grab overlay."
-                )
-            elif os.environ.get("PYWCM_LAYER_SHELL_PRELOADED") != "1":
-                print(
-                    "WCM: Gtk4LayerShell is present but was not preloaded early. "
-                    "Panels may remain above the grab overlay."
-                )
-            try:
-                s.set_modal(True)
-                s.set_transient_for(parent.get_root())
-            except Exception:
-                pass
+        # Behave like C++ WCM: a normal independent toplevel that requests real
+        # Gtk.Window.fullscreen().
+        s._using_layer_shell = False
+        _make_window_cover_all_surfaces(s, parent)
 
         s._label = Gtk.Label(label="Press a key combination\u2026\n(Escape to cancel)")
         s._label.set_halign(Gtk.Align.CENTER)
@@ -791,24 +630,32 @@ class KeyGrabWindow(Gtk.Window):
         s._label.set_hexpand(True)
         s._label.set_vexpand(True)
         s.set_child(s._label)
+
         kc = Gtk.EventControllerKey()
         kc.connect("key-pressed", s._on_kp)
         kc.connect("key-released", s._on_kr)
         s.add_controller(kc)
+
         cl = Gtk.GestureClick()
         cl.set_button(0)
         cl.connect("pressed", s._on_cl)
         s.add_controller(cl)
 
-        # Re-assert fullscreen after mapping for compositors that ignore an
-        # early fullscreen request until the surface exists.
+        # Re-assert fullscreen after the surface exists. This avoids the common
+        # GTK/Wayland race where fullscreen called before map is ignored.
+        s.connect("realize", lambda *_: s._ensure_covering())
         s.connect("map", lambda *_: s._ensure_covering())
+        GLib.idle_add(s._ensure_covering)
+        GLib.timeout_add(120, s._ensure_covering)
+        GLib.timeout_add(350, s._ensure_covering)
 
     def _ensure_covering(s):
-        if getattr(s, "_using_layer_shell", False):
-            return False
         try:
             s.fullscreen()
+        except Exception:
+            pass
+        try:
+            s.present()
         except Exception:
             pass
         return False
@@ -999,10 +846,19 @@ def get_category_index(cat):
     return len(CATEGORIES) - 1
 
 
-def get_config_path():
+def get_config_path(config_override=None):
+    if config_override:
+        return os.path.expanduser(config_override)
+
+    # WAYFIRE_CONFIG_FILE is set by Wayfire. Read it, but do not set it from
+    # pywcm. If it points to a usable file, follow it; otherwise fall back to
+    # the normal user config path.
     ov = os.environ.get("WAYFIRE_CONFIG_FILE")
     if ov:
-        return os.path.expanduser(ov)
+        ep = os.path.expanduser(ov)
+        if os.path.isfile(ep):
+            return ep
+
     ch = os.environ.get("XDG_CONFIG_HOME", "") or os.path.join(
         os.path.expanduser("~"), ".config"
     )
@@ -1010,7 +866,7 @@ def get_config_path():
     return p if os.path.isfile(p) else os.path.join(ch, "wayfire.ini")
 
 
-def get_wfshell_config_path():
+def get_wfshell_config_path(config_override=None):
     """Get the wf-shell config file path (separate from wayfire.ini)."""
     ov = os.environ.get("WF_SHELL_CONFIG_FILE")
     if ov:
@@ -1026,11 +882,26 @@ def get_wfshell_config_path():
     if os.path.isfile(p):
         return p
     # Default — create alongside wayfire.ini
-    wf_path = get_config_path()
+    wf_path = get_config_path(config_override)
     return os.path.join(os.path.dirname(wf_path), "wf-shell.ini")
 
 
 LABEL_W = 200
+
+
+def _apply_tooltip(text, *widgets):
+    """Apply XML <_long> text as a real tooltip on every useful hit target."""
+    tip = (text or "").strip()
+    if not tip:
+        return
+    for widget in widgets:
+        if widget is None:
+            continue
+        try:
+            widget.set_tooltip_text(tip)
+        except Exception:
+            pass
+
 
 #: Seconds the "Confirm Display Changes" prompt waits before auto-reverting a
 #: resolution, refresh-rate or rotation change that the user hasn't confirmed.
@@ -1075,7 +946,7 @@ class OptionWidget(Gtk.Box):
         s.set_margin_top(2)
         s.set_margin_bottom(2)
         s.lbl = Gtk.Label(label=opt.disp_name or opt.name)
-        s.lbl.set_tooltip_text(opt.tooltip or "")
+        _apply_tooltip(opt.tooltip, s, s.lbl)
         s.lbl.set_size_request(LABEL_W, -1)
         s.lbl.set_xalign(0)
         s.lbl.set_hexpand(False)
@@ -1085,9 +956,11 @@ class OptionWidget(Gtk.Box):
         s.end_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
         s.end_box.set_hexpand(True)
         s.end_box.set_halign(Gtk.Align.FILL)
+        _apply_tooltip(opt.tooltip, s.end_box)
         s.append(s.end_box)
         cur = cfg.get_option(plg.name, opt.name)
         s._build(opt, cur)
+        _apply_tooltip(opt.tooltip, getattr(s, "ed", None))
         if opt.type in (OptionType.BOOL, OptionType.COLOR, OptionType.DOUBLE) or (
             opt.type == OptionType.INT and not opt.int_labels
         ):
@@ -1408,6 +1281,7 @@ class SubgroupWidget(Gtk.Frame):
         super().__init__()
         s.add_css_class("subgroup-frame")
         exp = Gtk.Expander(label=sg.name or "Options")
+        _apply_tooltip(sg.tooltip, s, exp)
         exp.set_expanded(True)
         bx = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
         bx.set_margin_start(8)
@@ -1464,7 +1338,7 @@ class PluginPage(Gtk.Notebook):
                 except Exception as e:
                     bx.append(Gtk.Label(label=f"\u26a0 {o.name}: {e}"))
                     traceback.print_exc()
-            s._append_page(g.name or "General", bx, s._pending_add)
+            s._append_page(g.name or "General", bx, s._pending_add, g.tooltip)
         # Window-rules-type plugins (incl. the IPC interface) may have no
         # metadata options at all — inject an editable rules list so they
         # still get an add (+) button, like autostart.
@@ -1505,7 +1379,7 @@ class PluginPage(Gtk.Notebook):
             or "window rule" in d
         )
 
-    def _append_page(s, name, bx, pending_add):
+    def _append_page(s, name, bx, pending_add, tooltip=None):
         sc = Gtk.ScrolledWindow()
         sc.set_vexpand(True)
         sc.set_child(bx)
@@ -1520,9 +1394,13 @@ class PluginPage(Gtk.Notebook):
             fab.set_tooltip_text("Add")
             fab.connect("clicked", lambda w, f=pending_add: f())
             ov.add_overlay(fab)
-            s.append_page(ov, Gtk.Label(label=name))
+            tab = Gtk.Label(label=name)
+            _apply_tooltip(tooltip, tab)
+            s.append_page(ov, tab)
         else:
-            s.append_page(sc, Gtk.Label(label=name))
+            tab = Gtk.Label(label=name)
+            _apply_tooltip(tooltip, tab)
+            s.append_page(sc, tab)
 
     def _on_ts(s, nb, pg, pn):
         if pn > s._lt:
@@ -1559,6 +1437,7 @@ class PluginPage(Gtk.Notebook):
         if plg.name == "window-rules" or opt.name == "rules":
             return s._make_winrules(opt, cfg, plg, so)
         fr = Gtk.Frame(label=opt.disp_name or opt.name)
+        _apply_tooltip(opt.tooltip, fr)
         bx = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
         bx.set_margin_start(8)
         bx.set_margin_end(8)
@@ -1858,6 +1737,7 @@ class PluginButtonWidget(Gtk.Box):
         if plg.is_core_plugin or plg.type == PluginType.WF_SHELL:
             s.add_css_class("plugin-protected")
         s.check = Gtk.CheckButton()
+        _apply_tooltip(plg.tooltip, s, s.check)
         s.check.set_active(plg.enabled)
         s.check.set_valign(Gtk.Align.CENTER)
         if plg.is_core_plugin or plg.type == PluginType.WF_SHELL:
@@ -1867,7 +1747,7 @@ class PluginButtonWidget(Gtk.Box):
         s.append(s.check)
         btn = Gtk.Button()
         btn.add_css_class("flat")
-        btn.set_tooltip_text(plg.tooltip or "")
+        _apply_tooltip(plg.tooltip, btn)
         btn.connect("clicked", lambda w: wcm.open_page(plg))
         bb = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
         bb.set_halign(Gtk.Align.START)
@@ -1894,6 +1774,7 @@ class PluginButtonWidget(Gtk.Box):
         head = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
         head.set_hexpand(True)
         l = Gtk.Label(label=plg.disp_name or plg.name)
+        _apply_tooltip(plg.tooltip, l)
         l.add_css_class("plugin-name")
         l.set_xalign(0)
         l.set_hexpand(True)
@@ -1905,6 +1786,7 @@ class PluginButtonWidget(Gtk.Box):
         sub.add_css_class("plugin-subrow")
         sub.set_hexpand(True)
         meta = Gtk.Label(label=(plg.tooltip or plg.name or "").strip())
+        _apply_tooltip(plg.tooltip, meta)
         meta.add_css_class("plugin-meta")
         meta.set_xalign(0)
         meta.set_hexpand(True)
@@ -3304,7 +3186,7 @@ class WikiView(Gtk.Box):
 
 
 class WCM(Gtk.ApplicationWindow):
-    def __init__(s, app):
+    def __init__(s, app, config_path=None):
         super().__init__(application=app, title="Wayfire Config Manager")
         # The side panel is collapsed by default, so the window opens at the
         # usual (panel-less) WCM size and grows wider when the panel is opened.
@@ -3317,8 +3199,8 @@ class WCM(Gtk.ApplicationWindow):
                 s.set_icon_name("wcm")
             except:
                 pass
-        s.config = WayfireConfigFile(get_config_path())
-        s.wf_shell_config = WayfireConfigFile(get_wfshell_config_path())
+        s.config = WayfireConfigFile(get_config_path(config_path))
+        s.wf_shell_config = WayfireConfigFile(get_wfshell_config_path(config_path))
         s.preset_mgr = PresetManager()
         s.plugins = load_all_metadata()
         if not s.plugins:
@@ -4071,6 +3953,7 @@ class WCM(Gtk.ApplicationWindow):
                 f"<span size='12000'><b>{plg.disp_name or plg.name}</b></span>"
             )
             s.pdl.set_markup(f"<span size='10000'><b>{plg.tooltip or ''}</b></span>")
+            _apply_tooltip(plg.tooltip, s.pnl, s.pdl)
             s._refresh_plugin_presets()
             if s.plugin_page:
                 s.main_stack.remove(s.plugin_page)
@@ -4331,11 +4214,12 @@ class WCM(Gtk.ApplicationWindow):
 
 
 class WCMApp(Gtk.Application):
-    def __init__(s):
+    def __init__(s, config_path=None):
         super().__init__(
             application_id="org.wayfire.wcm", flags=Gio.ApplicationFlags.FLAGS_NONE
         )
         s.window = None
+        s.config_path = config_path
 
     def do_startup(s):
         Gtk.Application.do_startup(s)
@@ -4343,7 +4227,7 @@ class WCMApp(Gtk.Application):
 
     def do_activate(s):
         if not s.window:
-            s.window = WCM(s)
+            s.window = WCM(s, s.config_path)
         s.window.present()
 
 
@@ -4354,9 +4238,7 @@ def main():
     pa.add_argument("-c", "--config", help="Wayfire config file")
     pa.add_argument("-p", "--plugin", help="Plugin to open")
     args = pa.parse_args()
-    if args.config:
-        os.environ["WAYFIRE_CONFIG_FILE"] = args.config
-    app = WCMApp()
+    app = WCMApp(args.config)
     if args.plugin:
 
         def oap(a):
