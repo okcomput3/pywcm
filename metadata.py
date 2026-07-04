@@ -462,7 +462,7 @@ def collect_extra_animations(plugins):
                     break
             if dur_opt is None:
                 continue
-            value = dur_opt.name[:-len('_duration')]
+            value = dur_opt.name[:dur_opt.name.find('_')]
             if not value or value in seen:
                 continue
             seen.add(value)
@@ -488,7 +488,6 @@ def merge_extra_animations(plugins):
     animate = next((p for p in plugins if p.name == ANIMATE_PLUGIN), None)
     if animate is None:
         return 0
-    added = 0
     for opt in _iter_plugin_options(animate):
         if opt.name in ANIM_TARGET_OPTIONS and opt.type == OptionType.STRING:
             existing = {v for _, v in opt.str_labels}
@@ -496,8 +495,7 @@ def merge_extra_animations(plugins):
                 if value not in existing:
                     opt.str_labels.append((disp, value))
                     existing.add(value)
-                    added += 1
-    return added
+    return len(extras)                
 
 
 def load_all_metadata():
