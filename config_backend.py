@@ -8,6 +8,8 @@ the entire file. This is the key improvement over wf-config's approach.
 
 import os
 import re
+
+from i18n import _
 import shutil
 import subprocess
 from collections import OrderedDict
@@ -552,10 +554,12 @@ class OutputManager:
             return ('ok', '')  # empty -> 'default' (auto-detect), always safe
         if not re.match(r'^\d+x\d+$', res):
             return ('error',
-                    'Invalid resolution \u2014 use WIDTHxHEIGHT, e.g. 1920x1080.')
+                    _('Invalid resolution — use WIDTHxHEIGHT, '
+                      'e.g. 1920x1080.'))
         if refresh_mhz is not None and refresh_mhz < 0:
             return ('error',
-                    'Invalid refresh rate \u2014 enter a number of Hz, e.g. 60.')
+                    _('Invalid refresh rate — enter a number of Hz, '
+                      'e.g. 60.'))
         if modes:
             adv = {}
             for m in modes:
@@ -563,13 +567,14 @@ class OutputManager:
                     m['refresh'])
             if res not in adv:
                 return ('error',
-                        f'{res} is not a mode this monitor reports; '
-                        'it may fail to apply. Pick a listed resolution.')
+                        _('{res} is not a mode this monitor reports; it may '
+                          'fail to apply. Pick a listed resolution.'
+                          ).format(res=res))
             if refresh_mhz and refresh_mhz > 0 and not any(
                     abs(refresh_mhz - r) <= 500 for r in adv[res]):
                 return ('warn',
-                        "That refresh rate isn't advertised for this "
-                        "resolution; it may be ignored.")
+                        _("That refresh rate isn't advertised for this "
+                          "resolution; it may be ignored."))
         return ('ok', '')
 
     @staticmethod

@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """
-Wayfire Config Manager (WCM) — Python/GTK4 — LUXE THEME with Light/Dark toggle
+Wayfire Config Manager (WCM) — Python/GTK4 — LUXE THEME with system Light/Dark mode
 """
 import gi
 
+
 gi.require_version("Gtk", "4.0")
 gi.require_version("Gdk", "4.0")
-import sys, os, subprocess, glob, shutil, traceback, re
+import sys, os, subprocess, glob, shutil,  traceback, re
 from gi.repository import Gtk, Gdk, GLib, Gio, GdkPixbuf, Pango
 
 
@@ -57,7 +58,10 @@ except Exception:
     WebKit = None
     _HAVE_WEBKIT = False
 
+from i18n import _
 from config_backend import WayfireConfigFile, PresetManager, OutputManager
+
+__version__ = "0.2.0"
 from metadata import (
     load_all_metadata,
     load_metadata_from_dir,
@@ -73,20 +77,20 @@ def _make_css(dark=True):
     if dark:
         bg_deep, bg_panel, bg_card, bg_input, bg_input_f = (
             "#0b0d16",
-            "rgba(14,17,32,0.88)",
-            "rgba(18,22,40,0.72)",
-            "rgba(12,15,30,0.78)",
-            "rgba(16,20,38,0.90)",
+            "rgba(13,16,30,0.94)",
+            "rgba(18,22,40,0.82)",
+            "rgba(12,15,30,0.86)",
+            "rgba(16,20,38,0.94)",
         )
         amber, amber_l, rose, teal = "#e0982a", "#f0b84d", "#d25d77", "#38beb3"
         txt1, txt2 = "rgba(228,224,218,0.95)", "rgba(180,175,168,0.78)"
         bdr_s, bdr_a = "rgba(224,152,42,0.10)", "rgba(224,152,42,0.50)"
         ab, ar, at = "224,152,42", "210,93,119", "56,190,179"
-        panel_bg = "rgba(12,14,26,0.92)"
-        popup_bg = "rgba(12,15,28,0.96)"
+        panel_bg = "rgba(12,14,26,0.96)"
+        popup_bg = "rgba(12,15,28,0.98)"
         dlg_bg = "#0e1120"
         dlg_hdr = "rgba(14,17,32,0.98)"
-        left_bdr = "rgba(224,152,42,0.06)"
+        left_bdr = "rgba(224,152,42,0.12)"
         tab_bg = "rgba(10,12,24,0.75)"
     else:
         bg_deep, bg_panel, bg_card, bg_input, bg_input_f = (
@@ -107,9 +111,9 @@ def _make_css(dark=True):
         left_bdr = "rgba(176,120,24,0.10)"
         tab_bg = "rgba(245,240,232,0.80)"
     if dark:
-        ini_bg, ini_fg, ini_accent, ini_gutter = "#090b14", "#d7d3cb", "#5fd6cb", "#3f4658"
-        ini_border, ini_hdr_border = "rgba(95,214,203,0.16)", "rgba(95,214,203,0.14)"
-        ini_grad_a, ini_grad_b = "rgba(95,214,203,0.06)", "rgba(9,11,20,0.0)"
+        ini_bg, ini_fg, ini_accent, ini_gutter = "#0a0d18", "#e6e0d8", "#63ded4", "#636b80"
+        ini_border, ini_hdr_border = "rgba(95,214,203,0.26)", "rgba(95,214,203,0.22)"
+        ini_grad_a, ini_grad_b = "rgba(95,214,203,0.09)", "rgba(9,11,20,0.0)"
         ini_hot, ini_hot_a, ini_hot_b = "#5fd6cb", "rgba(95,214,203,0.40)", "rgba(95,214,203,0.13)"
     else:
         ini_bg, ini_fg, ini_accent, ini_gutter = "#f3efe7", "#2a2520", "#2a8a80", "#a39a8c"
@@ -135,7 +139,9 @@ def _make_css(dark=True):
 @keyframes tab-glow {{ 0% {{ box-shadow: 0 2px 4px rgba({ab},0.04); }} 50% {{ box-shadow: 0 2px 18px rgba({ab},0.18); }} 100% {{ box-shadow: 0 2px 4px rgba({ab},0.04); }} }}
 @keyframes slide-in-from-bottom {{ from {{ opacity: 0; margin-top: 20px; }} to {{ opacity: 1; margin-top: 0; }} }}
 @keyframes slide-in-from-top {{ from {{ opacity: 0; margin-top: -20px; }} to {{ opacity: 1; margin-top: 0; }} }}
-@keyframes plugin-entrance {{ 0% {{ opacity: 0; }} 100% {{ opacity: 1; }} }}
+@keyframes plugin-entrance {{ 0% {{ opacity: 0; margin-top: 10px; }} 100% {{ opacity: 1; margin-top: 0; }} }}
+@keyframes settings-reveal {{ 0% {{ opacity: 0; margin-top: 10px; }} 100% {{ opacity: 1; margin-top: 0; }} }}
+@keyframes rail-glow {{ 0% {{ opacity: 0.88; box-shadow: 0 0 0 rgba({ab},0.00); }} 50% {{ opacity: 1; box-shadow: 0 0 20px rgba({ab},0.18); }} 100% {{ opacity: 0.90; box-shadow: 0 0 0 rgba({ab},0.00); }} }}
 @keyframes category-slide-in {{ from {{ opacity: 0; margin-start: -30px; }} to {{ opacity: 1; margin-start: 10px; }} }}
 @keyframes category-slide-out {{ from {{ opacity: 1; margin-start: 10px; }} to {{ opacity: 0; margin-start: -30px; }} }}
 .tab-enter-up {{ animation: slide-in-from-bottom 380ms cubic-bezier(0.22,1,0.36,1); }}
@@ -162,8 +168,26 @@ button.flat:hover {{ background-color: transparent; background-image: none; bord
 entry {{ background-color: @bg_input; color: @text_primary; border: 1px solid @border_subtle; border-radius: 8px; padding: 7px 12px; caret-color: @amber; transition: all 300ms cubic-bezier(0.22,1,0.36,1); box-shadow: inset 0 1px 3px rgba(0,0,0,{'0.30' if dark else '0.06'}); }}
 entry:focus {{ background-color: @bg_input_focus; border-color: @border_active; box-shadow: inset 0 1px 3px rgba(0,0,0,{'0.30' if dark else '0.06'}), 0 0 16px rgba({ab},0.12); }}
 entry > text > selection {{ background-color: rgba({ab},0.22); }}
-searchentry {{ background-color: @bg_input; border: 1px solid rgba({ab},0.10); border-radius: 14px; padding: 11px 18px; color: @text_primary; font-size: 1.05em; transition: all 400ms cubic-bezier(0.22,1,0.36,1); }}
-searchentry:focus {{ border-color: @amber; box-shadow: 0 0 24px rgba({ab},0.16); }}
+.plugin-search, entry.plugin-search, entry.search.plugin-search, searchentry.plugin-search {{
+    background-color: {'rgba(12,16,28,0.96)' if dark else 'rgba(255,255,255,0.96)'};
+    background-image: none;
+    border: 1px solid rgba({ab},0.10);
+    border-radius: 14px;
+    padding: 11px 18px;
+    color: @text_primary;
+    font-size: 1.05em;
+    transition: all 400ms cubic-bezier(0.22,1,0.36,1);
+}}
+.plugin-search:focus, entry.plugin-search:focus, entry.search.plugin-search:focus, searchentry.plugin-search:focus {{
+    background-color: {'rgba(14,18,32,0.98)' if dark else 'rgba(255,255,255,0.98)'};
+    background-image: none;
+    border-color: @amber;
+    box-shadow: 0 0 24px rgba({ab},0.16);
+}}
+.plugin-search text, entry.plugin-search text, entry.search.plugin-search text, searchentry.plugin-search text {{
+    background-color: {'rgba(12,16,28,0.98)' if dark else 'rgba(255,255,255,0.98)'};
+    color: @text_primary;
+}}
 spinbutton {{ background-color: @bg_input; border: 1px solid @border_subtle; border-radius: 8px; color: @text_primary; transition: all 300ms ease; }}
 spinbutton:focus-within {{ border-color: @border_active; box-shadow: 0 0 14px rgba({ab},0.12); }}
 spinbutton > button {{ background-color: rgba({ab},0.04); border: none; border-radius: 0; color: @amber; min-width: 30px; transition: all 220ms ease; }}
@@ -225,28 +249,43 @@ stack {{ transition-duration: 450ms; }}
 .left-panel {{
     background-color: {panel_bg};
     border-right: 1px solid {left_bdr};
+    box-shadow: 8px 0 28px rgba(0,0,0,{'0.22' if dark else '0.05'});
 }}
-.category-header {{ padding: 10px 12px; margin-top: 8px; margin-start: 10px; }}
+.content-surface {{ background-color: {'rgba(10,12,24,0.40)' if dark else 'rgba(247,244,239,0.40)'}; border-radius: 18px; border: 1px solid rgba({ab},0.05); }}
+.settings-surface {{ background-color: {'rgba(10,12,24,0.40)' if dark else 'rgba(247,244,239,0.40)'}; border-radius: 16px; border: 1px solid rgba({ab},0.05); padding: 2px; }}
+.category-header {{ padding: 10px 12px; border-radius: 12px; margin-top: 8px; margin-start: 10px; }}
 .category-header label {{ color: @amber; font-weight: 700; letter-spacing: 0.8px; }}
 .category-header image {{ opacity: 0.75; }}
 .category-slide {{ animation: category-slide-in 500ms cubic-bezier(0.22,1,0.36,1) backwards; }}
 .category-slide-out {{ animation: category-slide-out 400ms cubic-bezier(0.22,1,0.36,1) forwards; }}
 
-.plugin-row {{ padding: 5px 8px; border-radius: 10px; transition: all 320ms cubic-bezier(0.22,1,0.36,1); background-color: transparent; background-image: none; }}
-.plugin-row:hover {{ background-color: transparent; background-image: none; }}
-.plugin-row button.flat {{ transition: all 320ms cubic-bezier(0.22,1,0.36,1); background-image: none; }}
-.plugin-row button.flat:hover {{ background-color: transparent; background-image: none; border-color: transparent; box-shadow: none; text-shadow: 0 0 10px rgba({ab},0.35); }}
+.plugin-row {{ padding: 8px 10px; margin: 2px 4px; border-radius: 14px; transition: all 260ms cubic-bezier(0.22,1,0.36,1); background-color: rgba({ab},0.020); background-image: none; border: 1px solid rgba({ab},0.055); min-height: 58px; }}
+.plugin-row.card-animate {{ animation: plugin-entrance 420ms cubic-bezier(0.22,1,0.36,1) backwards; }}
+.plugin-row:hover {{ background-color: rgba({ab},0.070); border-color: rgba({ab},0.20); box-shadow: 0 6px 22px rgba(0,0,0,{'0.20' if dark else '0.06'}); }}
+.plugin-row.plugin-enabled {{ background-color: rgba({ab},0.040); border-color: rgba({ab},0.13); }}
+.plugin-row.plugin-protected {{ border-color: rgba({at},0.16); }}
+.plugin-row button.flat {{ transition: all 260ms cubic-bezier(0.22,1,0.36,1); background-image: none; padding: 4px 6px; }}
+.plugin-row button.flat:hover {{ background-color: transparent; background-image: none; border-color: transparent; box-shadow: none; text-shadow: 0 0 8px rgba({ab},0.22); }}
 .plugin-row label {{ font-weight: 500; }}
+.plugin-name {{ color: @text_primary; font-weight: 700; }}
+.plugin-meta {{ color: @text_secondary; font-size: 0.82em; font-weight: 400; }}
+.plugin-subrow {{ margin-top: 1px; }}
+.status-pill {{ color: @text_secondary; border: 1px solid rgba({ab},0.10); border-radius: 999px; padding: 1px 7px; font-size: 0.68em; font-weight: 800; letter-spacing: 0.8px; margin-start: 8px; }}
+.status-pill.enabled {{ color: @amber_light; background-color: rgba({ab},0.10); border-color: rgba({ab},0.25); }}
+.status-pill.locked, .status-pill.shell {{ color: @teal; background-color: rgba({at},0.09); border-color: rgba({at},0.25); }}
 
 .plugin-title {{ color: {'#ffffff' if dark else '#1a1510'}; font-weight: 700; }}
 .plugin-desc {{ color: @text_secondary; font-weight: 400; }}
-.option-row {{ padding: 7px 10px; border-radius: 10px; transition: all 280ms ease; }}
-.option-row:hover {{ background-color: rgba({ab},0.03); }}
-.option-label {{ color: @text_secondary; font-weight: 500; transition: all 280ms ease; }}
-.option-row:hover .option-label {{ color: @text_primary; }}
+.option-row {{ padding: 7px 10px; border-radius: 11px; transition: all 220ms ease; border-left: 2px solid transparent; }}
+.option-row.row-reveal {{ animation: settings-reveal 300ms cubic-bezier(0.22,1,0.36,1) backwards; }}
+.option-row:hover {{ background-color: rgba({ab},0.035); }}
+.option-row.is-modified {{ background-color: rgba({ab},0.045); border-left-color: rgba({ab},0.65); }}
+.option-label {{ color: @text_secondary; font-weight: 500; transition: all 220ms ease; }}
+.option-row:hover .option-label, .option-row.is-modified .option-label {{ color: @text_primary; }}
 
-.reset-btn {{ background-color: transparent; border: 1px solid rgba({ar},0.10); border-radius: 8px; color: @rose; padding: 4px 8px; min-width: 30px; min-height: 30px; transition: all 300ms ease; }}
-.reset-btn:hover {{ background-color: rgba({ar},0.10); border-color: rgba({ar},0.40); }}
+.reset-btn {{ background-color: transparent; border: 1px solid rgba({ar},0.10); border-radius: 8px; color: @rose; padding: 4px 8px; min-width: 30px; min-height: 30px; transition: all 240ms ease; }}
+.reset-btn.is-default {{ opacity: 0.42; }}
+.reset-btn:hover {{ background-color: rgba({ar},0.10); border-color: rgba({ar},0.40); opacity: 1; }}
 .grab-btn {{ background-color: rgba({at},0.05); border: 1px solid rgba({at},0.16); color: @teal; font-weight: 700; min-width: 38px; transition: all 300ms ease; }}
 .grab-btn:hover {{ background-color: rgba({at},0.12); border-color: rgba({at},0.45); }}
 .add-btn {{ background-color: rgba({at},0.05); border: 1px solid rgba({at},0.16); color: @success; transition: all 300ms ease; }}
@@ -257,13 +296,15 @@ stack {{ transition-duration: 450ms; }}
 .remove-btn:hover {{ background-color: rgba({ar},0.10); border-color: rgba({ar},0.40); }}
 .run-btn {{ background-color: rgba({at},0.03); border: 1px solid rgba({at},0.10); color: @success; transition: all 300ms ease; }}
 .run-btn:hover {{ background-color: rgba({at},0.10); border-color: rgba({at},0.35); }}
-.action-btn {{ padding: 11px 22px; border-radius: 12px; font-weight: 600; letter-spacing: 0.4px; }}
+.action-btn {{ padding: 11px 22px; border-radius: 12px; font-weight: 600; letter-spacing: 0.1px; }}
+.side_toggle_btn {{ min-height: 38px; border-radius: 11px; }}
+.side_toggle_btn image {{ -gtk-icon-size: 18px; }}
 .action-btn.close-btn {{ background-color: rgba({ar},0.04); border-color: rgba({ar},0.12); color: @rose; }}
 .action-btn.close-btn:hover {{ background-color: rgba({ar},0.10); border-color: rgba({ar},0.40); color: @danger; }}
 .action-btn.back-btn {{ background-color: rgba({at},0.04); border-color: rgba({at},0.12); color: @teal; }}
 .action-btn.back-btn:hover {{ background-color: rgba({at},0.10); border-color: rgba({at},0.40); color: @teal; }}
 .grab-dialog {{ background-color: {popup_bg}; }}
-.grab-dialog label {{ color: @amber; font-weight: 500; font-size: 1.1em; }}
+.grab-dialog label {{ color: @amber; font-weight: 500; font-size: 1.1em; padding: 28px; }}
 .binding-frame {{ background-color: {'rgba(14,18,34,0.60)' if dark else 'rgba(255,255,255,0.50)'}; border: 1px solid rgba({ab},0.05); border-radius: 14px; margin-top: 3px; margin-bottom: 3px; transition: all 380ms cubic-bezier(0.22,1,0.36,1); }}
 .binding-frame:hover {{ border-color: rgba({ab},0.18); }}
 tooltip {{ background-color: {popup_bg}; border: 1px solid rgba({ab},0.18); border-radius: 10px; color: @text_primary; box-shadow: 0 6px 24px rgba(0,0,0,{'0.55' if dark else '0.10'}); }}
@@ -303,16 +344,16 @@ window.confirm-window {{ background-color: {panel_bg}; }}
 .confirm-close {{ background-color: transparent; border-color: transparent; padding: 2px 8px; }}
 .confirm-close:hover {{ background-color: rgba({ab},0.14); border-color: transparent; }}
 
-.ini-panel {{ background-color: {ini_bg}; border-left: 1px solid {ini_border}; }}
+.ini-panel {{ background-color: {ini_bg}; border-left: 1px solid {ini_border}; box-shadow: -10px 0 30px rgba(0,0,0,{'0.26' if dark else '0.07'}); }}
 .ini-header {{ padding: 10px 14px; border-bottom: 1px solid {ini_hdr_border}; background-image: linear-gradient(180deg, {ini_grad_a}, {ini_grad_b}); }}
 .ini-dot {{ color: {ini_accent}; font-size: 0.7em; animation: ini-pulse 1.7s ease-in-out infinite; }}
 .ini-title {{ color: {ini_fg}; font-family: monospace; font-weight: 600; font-size: 0.95em; letter-spacing: 0.3px; }}
-.ini-live {{ color: {ini_accent}; font-family: monospace; font-size: 0.66em; font-weight: 700; letter-spacing: 2px; opacity: 0.6; }}
+.ini-live {{ color: {ini_accent}; font-family: monospace; font-size: 0.66em; font-weight: 800; letter-spacing: 2px; opacity: 0.82; }}
 .ini-scroll {{ background-color: transparent; }}
 .ini-body {{ padding: 8px 0 44px 0; font-family: monospace; }}
 .ini-line {{ padding: 1px 12px 1px 6px; border-left: 2px solid transparent; }}
 .ini-gutter {{ color: {ini_gutter}; font-family: monospace; font-size: 0.82em; margin-right: 10px; }}
-.ini-text {{ font-family: monospace; font-size: 0.86em; }}
+.ini-text {{ font-family: monospace; font-size: 0.88em; }}
 @keyframes ini-pulse {{ 0% {{ opacity: 0.3; }} 50% {{ opacity: 1; }} 100% {{ opacity: 0.3; }} }}
 @keyframes ini-hot {{ 0% {{ background-color: {ini_hot_a}; }} 60% {{ background-color: {ini_hot_b}; }} 100% {{ background-color: transparent; }} }}
 .ini-hot {{ border-left: 2px solid {ini_hot}; animation: ini-hot 1.35s cubic-bezier(0.22,1,0.36,1); }}
@@ -324,16 +365,85 @@ window.confirm-window {{ background-color: {panel_bg}; }}
 .side-rail {{ background-color: rgba({ab},0.02); border-left: 1px solid rgba({at},0.10); }}
 .side-toggle {{ min-width: 26px; min-height: 30px; padding: 4px 3px; font-size: 1.15em; font-weight: 700; color: @text_secondary; }}
 .side-toggle:hover {{ background-color: rgba({at},0.12); color: @teal; border-color: rgba({at},0.40); }}
+.thin-back-btn {{ margin-bottom: 10px; margin-start: 5px; margin-end: 5px; min-width: 34px; min-height: 34px; border-radius: 11px; color: @amber_light; transition: opacity 180ms ease; }}
+.thin-back-btn:hover {{ background-color: rgba({ab},0.14); border-color: rgba({ab},0.38); color: @text_primary; }}
+.thin-brand {{ padding: 8px 0; border-radius: 18px; animation: rail-glow 4.4s ease-in-out infinite; }}
+.thin-brand-letter {{ color: @amber; font-weight: 800; font-size: 0.86em; letter-spacing: 0.8px; opacity: 0.92; text-shadow: 0 0 10px rgba({ab},0.20); padding: 1px 0; }}
+.thin-brand-badge {{ opacity: 0.96; animation: rail-glow 4.4s ease-in-out infinite; }}
+.thin-brand-icon {{ opacity: 0.95; margin-top: 3px; margin-bottom: 3px; }}
+.stagger-0 {{ animation-delay: 0ms; }}
+.stagger-1 {{ animation-delay: 45ms; }}
+.stagger-2 {{ animation-delay: 90ms; }}
+.stagger-3 {{ animation-delay: 135ms; }}
+.stagger-4 {{ animation-delay: 180ms; }}
+.stagger-5 {{ animation-delay: 225ms; }}
+.stagger-6 {{ animation-delay: 270ms; }}
+.stagger-7 {{ animation-delay: 315ms; }}
 """
 
 
 _css_provider = None
 
 
+def _system_prefers_dark(default=True):
+    """Best-effort system light/dark detection.
+
+    Important detail: GNOME/GTK commonly reports light mode as ``default``,
+    not ``prefer-light``. Treat ``default`` as light so the app can update from
+    dark back to light while it is still open.
+    """
+    # GNOME / xdg-desktop-portal compatible preference.
+    try:
+        gs = Gio.Settings.new("org.gnome.desktop.interface")
+        scheme = (gs.get_string("color-scheme") or "").strip().strip("'\"").lower()
+        if "prefer-dark" in scheme:
+            return True
+        if "prefer-light" in scheme or scheme in ("default", ""):
+            return False
+    except Exception:
+        pass
+
+    # Shell fallback for systems where Gio.Settings cannot load the schema.
+    try:
+        r = subprocess.run(
+            ["gsettings", "get", "org.gnome.desktop.interface", "color-scheme"],
+            capture_output=True,
+            text=True,
+            timeout=1,
+        )
+        if r.returncode == 0:
+            scheme = (r.stdout or "").strip().strip("'\"").lower()
+            if "prefer-dark" in scheme:
+                return True
+            if "prefer-light" in scheme or scheme in ("default", ""):
+                return False
+    except Exception:
+        pass
+
+    settings = Gtk.Settings.get_default()
+    if settings is not None:
+        # Theme-name fallback, useful on non-GNOME GTK desktops.
+        try:
+            theme = (settings.get_property("gtk-theme-name") or "").lower()
+            if "dark" in theme:
+                return True
+            if "light" in theme:
+                return False
+        except Exception:
+            pass
+
+    # Do not use gtk-application-prefer-dark-theme as a detection fallback here.
+    # WCM sets that property itself when applying the theme for WebKit, so using
+    # it as input can trap the app in dark mode until restart.
+    return bool(default)
+
+
 def _apply_theme(dark=True):
     global _css_provider, _INI_DARK
     _INI_DARK = dark
     display = Gdk.Display.get_default()
+    if display is None:
+        return
     if _css_provider:
         Gtk.StyleContext.remove_provider_for_display(display, _css_provider)
     _css_provider = Gtk.CssProvider()
@@ -341,10 +451,9 @@ def _apply_theme(dark=True):
     Gtk.StyleContext.add_provider_for_display(
         display, _css_provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION + 100
     )
-    # Make the embedded wiki/webpage follow the same light/dark choice.
-    # WebKitGTK maps the GTK "prefer dark" setting onto the page's
-    # `prefers-color-scheme`, so flipping it here re-themes the webpage live
-    # (sites that honour the media query, like the Wayfire wiki, switch too).
+    # Let embedded WebKit pages follow the same light/dark choice as the app.
+    # The app still *detects* the system theme; this just advertises the chosen
+    # preference to embedded pages that honour prefers-color-scheme.
     settings = Gtk.Settings.get_default()
     if settings is not None:
         try:
@@ -461,12 +570,50 @@ def _keyval_to_linux(kv):
     return "KEY_" + g.upper() if g else None
 
 
+def _make_window_cover_all_surfaces(win, parent=None):
+    """Make the key-grab window a real fullscreen toplevel.
+
+    This follows the behavior that works in the C++ WCM: use a normal
+    independent GTK toplevel and call Gtk.Window.fullscreen(). Do not fake
+    fullscreen by setting output-sized geometry, and do not make the grab window
+    transient/modal.
+    """
+    try:
+        win.set_decorated(False)
+    except Exception:
+        pass
+    try:
+        win.set_focusable(True)
+    except Exception:
+        pass
+
+    root = None
+    try:
+        root = parent.get_root() if parent is not None else None
+    except Exception:
+        root = None
+
+    # Keep the window associated with the app if possible, but do not make it a
+    # transient/modal dialog. On Wayland, fullscreening a dialog can be handled
+    # differently by the compositor.
+    try:
+        app = root.get_application() if root is not None else None
+        if app is not None:
+            win.set_application(app)
+    except Exception:
+        pass
+
+    try:
+        win.fullscreen()
+    except Exception as e:
+        print(f"WCM: Gtk.Window.fullscreen() failed for grab overlay: {e}")
+    return False
+
+
 class KeyGrabWindow(Gtk.Window):
     def __init__(s, parent):
         super().__init__(
-            title="Waiting for Binding",
-            modal=True,
-            transient_for=parent.get_root(),
+            title=_("Waiting for Binding"),
             default_width=420,
             default_height=130,
         )
@@ -474,21 +621,47 @@ class KeyGrabWindow(Gtk.Window):
         s._mods = set()
         s._done = False
         s.add_css_class("grab-dialog")
-        s._label = Gtk.Label(label="Press a key combination\u2026\n(Escape to cancel)")
+
+        # Behave like C++ WCM: a normal independent toplevel that requests real
+        # Gtk.Window.fullscreen().
+        s._using_layer_shell = False
+        _make_window_cover_all_surfaces(s, parent)
+
+        s._label = Gtk.Label(label=_("Press a key combination…\n(Escape to cancel)"))
         s._label.set_halign(Gtk.Align.CENTER)
         s._label.set_valign(Gtk.Align.CENTER)
+        s._label.set_hexpand(True)
+        s._label.set_vexpand(True)
         s.set_child(s._label)
+
         kc = Gtk.EventControllerKey()
         kc.connect("key-pressed", s._on_kp)
         kc.connect("key-released", s._on_kr)
         s.add_controller(kc)
+
         cl = Gtk.GestureClick()
         cl.set_button(0)
         cl.connect("pressed", s._on_cl)
         s.add_controller(cl)
-        # Match the original C++ WCM, which calls grab_dialog.fullscreen()
-        # so the binding-capture window covers the whole screen.
-        s.fullscreen()
+
+        # Re-assert fullscreen after the surface exists. This avoids the common
+        # GTK/Wayland race where fullscreen called before map is ignored.
+        s.connect("realize", lambda *_: s._ensure_covering())
+        s.connect("map", lambda *_: s._ensure_covering())
+        GLib.idle_add(s._ensure_covering)
+        GLib.timeout_add(120, s._ensure_covering)
+        GLib.timeout_add(350, s._ensure_covering)
+
+    def _ensure_covering(s):
+        try:
+            s.fullscreen()
+        except Exception:
+            pass
+        try:
+            s.present()
+        except Exception:
+            pass
+        return False
 
     def _ms(s):
         p = []
@@ -508,7 +681,7 @@ class KeyGrabWindow(Gtk.Window):
             return True
         if kv in _MODIFIER_KEYVALS:
             s._mods.add(kv)
-            s._label.set_text(s._ms() or "(No modifiers)")
+            s._label.set_text(s._ms() or _("(No modifiers)"))
             return True
         kn = _keyval_to_linux(kv)
         if kn:
@@ -519,7 +692,7 @@ class KeyGrabWindow(Gtk.Window):
 
     def _on_kr(s, ctrl, kv, kc, st):
         s._mods.discard(kv)
-        s._label.set_text(s._ms() or "Press a key combination\u2026")
+        s._label.set_text(s._ms() or _("Press a key combination…"))
 
     def _on_cl(s, g, n, x, y):
         bm = {
@@ -656,6 +829,19 @@ def find_app_icon():
     return find_icon("wcm.svg") or None
 
 
+# Category names come from CATEGORIES below and are looked up with _() at
+# display time; N_() marks them for xgettext extraction without translating
+# the keys themselves (they must stay English to match plugin metadata).
+def N_(x):
+    return x
+
+
+_CATEGORY_TRANSLATIONS = (
+    N_("General"), N_("Accessibility"), N_("Desktop"), N_("Shell"),
+    N_("Effects"), N_("Window Management"), N_("Utility"), N_("Other"),
+    N_("Uncategorized"),
+)
+
 CATEGORIES = [
     ("General", "preferences-system"),
     ("Accessibility", "preferences-desktop-accessibility"),
@@ -670,16 +856,25 @@ CATEGORY_NAMES = [c[0] for c in CATEGORIES]
 
 
 def get_category_index(cat):
-    for i, (n, _) in enumerate(CATEGORIES):
+    for i, (n, _icon) in enumerate(CATEGORIES):
         if n == cat:
             return i
     return len(CATEGORIES) - 1
 
 
-def get_config_path():
+def get_config_path(config_override=None):
+    if config_override:
+        return os.path.expanduser(config_override)
+
+    # WAYFIRE_CONFIG_FILE is set by Wayfire. Read it, but do not set it from
+    # pywcm. If it points to a usable file, follow it; otherwise fall back to
+    # the normal user config path.
     ov = os.environ.get("WAYFIRE_CONFIG_FILE")
     if ov:
-        return os.path.expanduser(ov)
+        ep = os.path.expanduser(ov)
+        if os.path.isfile(ep):
+            return ep
+
     ch = os.environ.get("XDG_CONFIG_HOME", "") or os.path.join(
         os.path.expanduser("~"), ".config"
     )
@@ -687,7 +882,7 @@ def get_config_path():
     return p if os.path.isfile(p) else os.path.join(ch, "wayfire.ini")
 
 
-def get_wfshell_config_path():
+def get_wfshell_config_path(config_override=None):
     """Get the wf-shell config file path (separate from wayfire.ini)."""
     ov = os.environ.get("WF_SHELL_CONFIG_FILE")
     if ov:
@@ -703,11 +898,26 @@ def get_wfshell_config_path():
     if os.path.isfile(p):
         return p
     # Default — create alongside wayfire.ini
-    wf_path = get_config_path()
+    wf_path = get_config_path(config_override)
     return os.path.join(os.path.dirname(wf_path), "wf-shell.ini")
 
 
 LABEL_W = 200
+
+
+def _apply_tooltip(text, *widgets):
+    """Apply XML <_long> text as a real tooltip on every useful hit target."""
+    tip = (text or "").strip()
+    if not tip:
+        return
+    for widget in widgets:
+        if widget is None:
+            continue
+        try:
+            widget.set_tooltip_text(tip)
+        except Exception:
+            pass
+
 
 #: Seconds the "Confirm Display Changes" prompt waits before auto-reverting a
 #: resolution, refresh-rate or rotation change that the user hasn't confirmed.
@@ -737,19 +947,22 @@ def _parse_anim(s):
 
 
 class OptionWidget(Gtk.Box):
-    def __init__(s, opt, cfg, plg):
+    def __init__(s, opt, cfg, plg, anim_index=0):
         super().__init__(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
         s.option = opt
         s.config = cfg
         s.plugin = plg
         s._block = False
+        s._text_save_id = 0
         s.add_css_class("option-row")
+        s.add_css_class("row-reveal")
+        s.add_css_class(f"stagger-{anim_index % 8}")
         s.set_margin_start(4)
         s.set_margin_end(4)
         s.set_margin_top(2)
         s.set_margin_bottom(2)
         s.lbl = Gtk.Label(label=opt.disp_name or opt.name)
-        s.lbl.set_tooltip_text(opt.tooltip or "")
+        _apply_tooltip(opt.tooltip, s, s.lbl)
         s.lbl.set_size_request(LABEL_W, -1)
         s.lbl.set_xalign(0)
         s.lbl.set_hexpand(False)
@@ -759,20 +972,23 @@ class OptionWidget(Gtk.Box):
         s.end_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
         s.end_box.set_hexpand(True)
         s.end_box.set_halign(Gtk.Align.FILL)
+        _apply_tooltip(opt.tooltip, s.end_box)
         s.append(s.end_box)
         cur = cfg.get_option(plg.name, opt.name)
         s._build(opt, cur)
+        _apply_tooltip(opt.tooltip, getattr(s, "ed", None))
         if opt.type in (OptionType.BOOL, OptionType.COLOR, OptionType.DOUBLE) or (
             opt.type == OptionType.INT and not opt.int_labels
         ):
             s.end_box.set_hexpand(True)
             s.end_box.set_halign(Gtk.Align.END)
         rb = Gtk.Button.new_from_icon_name("edit-clear")
-        rb.set_tooltip_text("Reset to default")
+        rb.set_tooltip_text(_("Reset to default"))
         rb.add_css_class("reset-btn")
         rb.connect("clicked", s._reset)
         s.end_box.append(rb)
         s.reset_btn = rb
+        s._update_modified_state()
 
     def _build(s, opt, cur):
         ot = opt.type
@@ -913,18 +1129,84 @@ class OptionWidget(Gtk.Box):
             s.ed.connect("changed", s._on_text_changed)
             s.end_box.append(s.ed)
 
+    def _default_text(s):
+        d = s.option.default_value
+        if s.option.type == OptionType.BOOL:
+            return "true" if bool(d) else "false"
+        if s.option.type == OptionType.ANIMATION:
+            return str(d or "300ms linear")
+        if s.option.type == OptionType.COLOR:
+            return str(d or "0 0 0 1")
+        return str(d or "")
+
+    def _values_equal(s, a, b):
+        a = "" if a is None else str(a).strip()
+        b = "" if b is None else str(b).strip()
+        if s.option.type == OptionType.BOOL:
+            def tb(x):
+                return str(x).strip().lower() in ("true", "1", "yes", "on")
+            return tb(a) == tb(b)
+        if s.option.type == OptionType.INT:
+            try:
+                return int(float(a or 0)) == int(float(b or 0))
+            except Exception:
+                pass
+        if s.option.type == OptionType.DOUBLE:
+            try:
+                return abs(float(a or 0) - float(b or 0)) < 1e-9
+            except Exception:
+                pass
+        return a == b
+
+    def _update_modified_state(s):
+        if not hasattr(s, "reset_btn"):
+            return
+        cur = s.config.get_option(s.plugin.name, s.option.name)
+        default = s._default_text()
+        modified = cur is not None and not s._values_equal(cur, default)
+        if modified:
+            s.add_css_class("is-modified")
+            s.reset_btn.remove_css_class("is-default")
+            s.reset_btn.set_tooltip_text(_("Reset to default: {default}").format(default=default))
+        else:
+            s.remove_css_class("is-modified")
+            s.reset_btn.add_css_class("is-default")
+            s.reset_btn.set_tooltip_text(_("Already at default"))
+
     def _save(s, v):
         if s._block:
             return
+        if getattr(s, "_text_save_id", 0):
+            try:
+                GLib.source_remove(s._text_save_id)
+            except Exception:
+                pass
+            s._text_save_id = 0
         s.config.set_option(s.plugin.name, s.option.name, str(v))
         s.config.save()
+        s._update_modified_state()
 
     def _on_text_changed(s, widget):
-        """Called on every keystroke — mirrors C++ WCM live-save behaviour."""
-        if not s._block:
-            s.config.set_option(s.plugin.name, s.option.name,
-                                str(widget.get_text()))
-            s.config.save()
+        """Debounced live-save keeps typing smooth while preserving live updates."""
+        if s._block:
+            return
+        if getattr(s, "_text_save_id", 0):
+            try:
+                GLib.source_remove(s._text_save_id)
+            except Exception:
+                pass
+            s._text_save_id = 0
+        text = str(widget.get_text())
+
+        def do_save():
+            s._text_save_id = 0
+            if not s._block:
+                s.config.set_option(s.plugin.name, s.option.name, text)
+                s.config.save()
+                s._update_modified_state()
+            return False
+
+        s._text_save_id = GLib.timeout_add(350, do_save)
 
     def _save_anim(s):
         s._save(
@@ -947,7 +1229,7 @@ class OptionWidget(Gtk.Box):
 
     def _choose_dir(s, btn):
         s._file_dlg = Gtk.FileChooserNative(
-            title="Select Directory",
+            title=_("Select Directory"),
             transient_for=s.get_root(),
             action=Gtk.FileChooserAction.SELECT_FOLDER,
         )
@@ -956,7 +1238,7 @@ class OptionWidget(Gtk.Box):
 
     def _choose_file(s, btn):
         s._file_dlg = Gtk.FileChooserNative(
-            title="Select File",
+            title=_("Select File"),
             transient_for=s.get_root(),
             action=Gtk.FileChooserAction.OPEN,
         )
@@ -1014,7 +1296,8 @@ class SubgroupWidget(Gtk.Frame):
     def __init__(s, sg, cfg, plg):
         super().__init__()
         s.add_css_class("subgroup-frame")
-        exp = Gtk.Expander(label=sg.name or "Options")
+        exp = Gtk.Expander(label=sg.name or _("Options"))
+        _apply_tooltip(sg.tooltip, s, exp)
         exp.set_expanded(True)
         bx = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
         bx.set_margin_start(8)
@@ -1036,15 +1319,19 @@ class PluginPage(Gtk.Notebook):
     def __init__(s, plg, cfg):
         super().__init__()
         s.set_scrollable(True)
+        s.add_css_class("plugin-notebook")
         s.connect("switch-page", s._on_ts)
         s._lt = 0
         s._br = False
         s._rules_done = False
+        s._reveal_i = 0
         for g in plg.option_groups:
             if g.type != OptionType.GROUP or g.hidden:
                 continue
             s._pending_add = None
             bx = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+            bx.set_hexpand(True)
+            bx.add_css_class("settings-surface")
             bx.set_margin_start(10)
             bx.set_margin_end(10)
             bx.set_margin_top(10)
@@ -1054,30 +1341,49 @@ class PluginPage(Gtk.Notebook):
                     continue
                 try:
                     if o.type == OptionType.SUBGROUP and o.options:
-                        bx.append(SubgroupWidget(o, cfg, plg))
+                        sgw = SubgroupWidget(o, cfg, plg)
+                        s._tag_reveal(sgw)
+                        bx.append(sgw)
                     elif o.type == OptionType.DYNAMIC_LIST:
                         w = s._make_dynlist(o, cfg, plg)
                         if w:
+                            s._tag_reveal(w)
                             bx.append(w)
                     elif o.type != OptionType.GROUP:
-                        bx.append(OptionWidget(o, cfg, plg))
+                        bx.append(OptionWidget(o, cfg, plg, s._next_reveal_index()))
                 except Exception as e:
                     bx.append(Gtk.Label(label=f"\u26a0 {o.name}: {e}"))
                     traceback.print_exc()
-            s._append_page(g.name or "General", bx, s._pending_add)
+            s._append_page(_(g.name or "General"), bx, s._pending_add, g.tooltip)
         # Window-rules-type plugins (incl. the IPC interface) may have no
         # metadata options at all — inject an editable rules list so they
         # still get an add (+) button, like autostart.
         if s._is_winrules(plg) and not s._rules_done:
             s._pending_add = None
             bx = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+            bx.set_hexpand(True)
+            bx.add_css_class("settings-surface")
             bx.set_margin_start(10)
             bx.set_margin_end(10)
             bx.set_margin_top(10)
             bx.set_margin_bottom(10)
             so = cfg.get_section_options(plg.name)
-            bx.append(s._make_winrules_box(cfg, plg, so, "rule_"))
-            s._append_page("Rules", bx, s._pending_add)
+            wr = s._make_winrules_box(cfg, plg, so, "rule_")
+            s._tag_reveal(wr)
+            bx.append(wr)
+            s._append_page(_("Rules"), bx, s._pending_add)
+
+    def _next_reveal_index(s):
+        i = s._reveal_i
+        s._reveal_i += 1
+        return i
+
+    def _tag_reveal(s, widget):
+        try:
+            widget.add_css_class("row-reveal")
+            widget.add_css_class(f"stagger-{s._next_reveal_index() % 8}")
+        except Exception:
+            pass
 
     @staticmethod
     def _is_winrules(plg):
@@ -1089,7 +1395,7 @@ class PluginPage(Gtk.Notebook):
             or "window rule" in d
         )
 
-    def _append_page(s, name, bx, pending_add):
+    def _append_page(s, name, bx, pending_add, tooltip=None):
         sc = Gtk.ScrolledWindow()
         sc.set_vexpand(True)
         sc.set_child(bx)
@@ -1104,9 +1410,13 @@ class PluginPage(Gtk.Notebook):
             fab.set_tooltip_text("Add")
             fab.connect("clicked", lambda w, f=pending_add: f())
             ov.add_overlay(fab)
-            s.append_page(ov, Gtk.Label(label=name))
+            tab = Gtk.Label(label=name)
+            _apply_tooltip(tooltip, tab)
+            s.append_page(ov, tab)
         else:
-            s.append_page(sc, Gtk.Label(label=name))
+            tab = Gtk.Label(label=name)
+            _apply_tooltip(tooltip, tab)
+            s.append_page(sc, tab)
 
     def _on_ts(s, nb, pg, pn):
         if pn > s._lt:
@@ -1143,6 +1453,7 @@ class PluginPage(Gtk.Notebook):
         if plg.name == "window-rules" or opt.name == "rules":
             return s._make_winrules(opt, cfg, plg, so)
         fr = Gtk.Frame(label=opt.disp_name or opt.name)
+        _apply_tooltip(opt.tooltip, fr)
         bx = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
         bx.set_margin_start(8)
         bx.set_margin_end(8)
@@ -1273,7 +1584,7 @@ class PluginPage(Gtk.Notebook):
         fr.add_css_class("binding-frame")
         fr.set_margin_top(1)
         fr.set_margin_bottom(1)
-        exp = Gtk.Expander(label=f"Command {cn}: {cv}")
+        exp = Gtk.Expander(label=_("Command {name}: {command}").format(name=cn, command=cv))
         exp.set_expanded(not cv)
         exp.set_margin_top(4)
         exp.set_margin_bottom(4)
@@ -1285,22 +1596,22 @@ class PluginPage(Gtk.Notebook):
         vb.set_margin_top(5)
         vb.set_margin_bottom(5)
         tr = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
-        tl = Gtk.Label(label="Type")
+        tl = Gtk.Label(label=_("Type"))
         tl.set_size_request(LABEL_W, -1)
         tl.set_xalign(0)
         tl.add_css_class("option-label")
         tr.append(tl)
         tc = Gtk.ComboBoxText()
-        tc.append_text("Regular")
-        tc.append_text("Repeat")
-        tc.append_text("Always")
+        tc.append_text(_("Regular"))
+        tc.append_text(_("Repeat"))
+        tc.append_text(_("Always"))
         tc.set_active(bt)
         tc.set_hexpand(True)
         tc.connect("changed", lambda w, c=cn: s._chg_bt(cfg, plg, c, w.get_active()))
         tr.append(tc)
         vb.append(tr)
         br = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
-        bl = Gtk.Label(label="Binding")
+        bl = Gtk.Label(label=_("Binding"))
         bl.set_size_request(LABEL_W, -1)
         bl.set_xalign(0)
         bl.add_css_class("option-label")
@@ -1316,7 +1627,7 @@ class PluginPage(Gtk.Notebook):
         br.append(gb)
         vb.append(br)
         cr = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
-        cl = Gtk.Label(label="Command")
+        cl = Gtk.Label(label=_("Command"))
         cl.set_size_request(LABEL_W, -1)
         cl.set_xalign(0)
         cl.add_css_class("option-label")
@@ -1326,7 +1637,8 @@ class PluginPage(Gtk.Notebook):
         ce.set_hexpand(True)
         ce.connect(
             "changed",
-            lambda w, e=exp, c=cn: e.set_label(f"Command {c}: {w.get_text()}"),
+            lambda w, e=exp, c=cn: e.set_label(
+                _("Command {name}: {command}").format(name=c, command=w.get_text())),
         )
         ce.connect("changed", lambda w, c=ck: s._so(cfg, plg, c, w.get_text()))
         cr.append(ce)
@@ -1394,7 +1706,7 @@ class PluginPage(Gtk.Notebook):
 
     def _choose_exec(s, e):
         s._exec_dlg = Gtk.FileChooserNative(
-            title="Choose Executable",
+            title=_("Choose Executable"),
             transient_for=s.get_root(),
             action=Gtk.FileChooserAction.OPEN,
         )
@@ -1430,14 +1742,21 @@ class PluginPage(Gtk.Notebook):
 
 
 class PluginButtonWidget(Gtk.Box):
-    def __init__(s, plg, wcm):
-        super().__init__(orientation=Gtk.Orientation.HORIZONTAL, spacing=5)
+    def __init__(s, plg, wcm, anim_index=0):
+        super().__init__(orientation=Gtk.Orientation.HORIZONTAL, spacing=9)
         s.plugin = plg
         s.wcm = wcm
         s.set_halign(Gtk.Align.START)
+        s.set_valign(Gtk.Align.CENTER)
         s.add_css_class("plugin-row")
+        s.add_css_class("card-animate")
+        s.add_css_class(f"stagger-{anim_index % 8}")
+        if plg.is_core_plugin or plg.type == PluginType.WF_SHELL:
+            s.add_css_class("plugin-protected")
         s.check = Gtk.CheckButton()
+        _apply_tooltip(plg.tooltip, s, s.check)
         s.check.set_active(plg.enabled)
+        s.check.set_valign(Gtk.Align.CENTER)
         if plg.is_core_plugin or plg.type == PluginType.WF_SHELL:
             s.check.set_sensitive(False)
         else:
@@ -1445,10 +1764,11 @@ class PluginButtonWidget(Gtk.Box):
         s.append(s.check)
         btn = Gtk.Button()
         btn.add_css_class("flat")
-        btn.set_tooltip_text(plg.tooltip or "")
+        _apply_tooltip(plg.tooltip, btn)
         btn.connect("clicked", lambda w: wcm.open_page(plg))
-        bb = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=5)
+        bb = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
         bb.set_halign(Gtk.Align.START)
+        bb.set_valign(Gtk.Align.CENTER)
         ip = find_plugin_icon(plg.name)
         if not ip:
             ip = (
@@ -1464,14 +1784,70 @@ class PluginButtonWidget(Gtk.Box):
             img = Gtk.Image.new_from_icon_name("preferences-system")
             img.set_pixel_size(32)
         bb.append(img)
+
+        text_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=3)
+        text_box.set_hexpand(True)
+        text_box.set_valign(Gtk.Align.CENTER)
+        head = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        head.set_hexpand(True)
         l = Gtk.Label(label=plg.disp_name or plg.name)
+        _apply_tooltip(plg.tooltip, l)
+        l.add_css_class("plugin-name")
+        l.set_xalign(0)
+        l.set_hexpand(True)
         l.set_ellipsize(Pango.EllipsizeMode.END)
-        bb.append(l)
+        head.append(l)
+        text_box.append(head)
+
+        sub = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        sub.add_css_class("plugin-subrow")
+        sub.set_hexpand(True)
+        meta = Gtk.Label(label=(plg.tooltip or plg.name or "").strip())
+        _apply_tooltip(plg.tooltip, meta)
+        meta.add_css_class("plugin-meta")
+        meta.set_xalign(0)
+        meta.set_hexpand(True)
+        meta.set_ellipsize(Pango.EllipsizeMode.END)
+        meta.set_max_width_chars(34)
+        sub.append(meta)
+        s.status = Gtk.Label()
+        s.status.add_css_class("status-pill")
+        sub.append(s.status)
+        text_box.append(sub)
+        bb.append(text_box)
         btn.set_child(bb)
         s.append(btn)
+        s._refresh_visual_state()
+
+    def _refresh_visual_state(s):
+        if s.plugin.enabled:
+            s.add_css_class("plugin-enabled")
+        else:
+            s.remove_css_class("plugin-enabled")
+        if s.plugin.is_core_plugin:
+            s.status.set_text(_("CORE"))
+            s.status.remove_css_class("enabled")
+            s.status.remove_css_class("shell")
+            s.status.add_css_class("locked")
+        elif s.plugin.type == PluginType.WF_SHELL:
+            s.status.set_text(_("SHELL"))
+            s.status.remove_css_class("enabled")
+            s.status.remove_css_class("locked")
+            s.status.add_css_class("shell")
+        elif s.plugin.enabled:
+            s.status.set_text(_("ON"))
+            s.status.remove_css_class("locked")
+            s.status.remove_css_class("shell")
+            s.status.add_css_class("enabled")
+        else:
+            s.status.set_text(_("OFF"))
+            s.status.remove_css_class("enabled")
+            s.status.remove_css_class("locked")
+            s.status.remove_css_class("shell")
 
     def _on_t(s, c):
         s.wcm.set_plugin_enabled(s.plugin, c.get_active())
+        s._refresh_visual_state()
 
 
 class MainPage(Gtk.ScrolledWindow):
@@ -1482,8 +1858,12 @@ class MainPage(Gtk.ScrolledWindow):
         s._ft = ""
         s._pw = []
         vb = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
-        vb.set_margin_top(10)
-        vb.set_margin_bottom(10)
+        vb.set_hexpand(True)
+        vb.add_css_class("content-surface")
+        vb.set_margin_top(18)
+        vb.set_margin_bottom(18)
+        vb.set_margin_start(10)
+        vb.set_margin_end(10)
         s.sg = Gtk.SizeGroup(mode=Gtk.SizeGroupMode.BOTH)
         s.cd = {}
         for i, (cn, ic) in enumerate(CATEGORIES):
@@ -1493,7 +1873,7 @@ class MainPage(Gtk.ScrolledWindow):
             img.set_pixel_size(24)
             tb.append(img)
             l = Gtk.Label()
-            l.set_markup(f"<span size='14000'><b>{cn}</b></span>")
+            l.set_markup(f"<span size='14000'><b>{GLib.markup_escape_text(_(cn))}</b></span>")
             tb.append(l)
             vb.append(tb)
             fb = Gtk.FlowBox()
@@ -1501,7 +1881,9 @@ class MainPage(Gtk.ScrolledWindow):
             fb.set_halign(Gtk.Align.START)
             fb.set_min_children_per_line(3)
             fb.set_max_children_per_line(10)
-            fb.set_margin_start(20)
+            fb.set_row_spacing(8)
+            fb.set_column_spacing(12)
+            fb.set_margin_start(10)
             fb.set_filter_func(s._ff)
             vb.append(fb)
             sep = Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL)
@@ -1511,12 +1893,13 @@ class MainPage(Gtk.ScrolledWindow):
         for p in plugins:
             ci = get_category_index(p.category)
             cn = CATEGORIES[ci][0]
-            _, fb, _ = s.cd[cn]
-            w = PluginButtonWidget(p, wcm)
+            _h, fb, _s2 = s.cd[cn]
+            w = PluginButtonWidget(p, wcm, len(s._pw))
             s.sg.add_widget(w)
             fb.append(w)
             s._pw.append(w)
         s.set_child(vb)
+        s._sync_category_visibility()
 
     def _ff(s, child):
         w = child.get_child()
@@ -1533,145 +1916,112 @@ class MainPage(Gtk.ScrolledWindow):
 
     def set_filter(s, text):
         s._ft = text.lower()
-        for cn in CATEGORY_NAMES:
-            _, fb, _ = s.cd[cn]
-            child = fb.get_first_child()
-            while child:
-                child.add_css_class("filter-hidden")
-                child = child.get_next_sibling()
-        for cn in CATEGORY_NAMES:
-            _, fb, _ = s.cd[cn]
+        for _h, fb, _s2 in s.cd.values():
             fb.invalidate_filter()
-        GLib.idle_add(s._reveal)
+        s._sync_category_visibility()
 
-    def _reveal(s):
-        delay = 0
-        for cn in CATEGORY_NAMES:
-            title, fb, sep = s.cd[cn]
-            vis = False
-            child = fb.get_first_child()
-            while child:
-                w = child.get_child()
-                if w and hasattr(w, "plugin"):
-                    p = w.plugin
-                    if (
-                        not s._ft
-                        or s._ft in p.name.lower()
-                        or s._ft in p.disp_name.lower()
-                        or s._ft in p.tooltip.lower()
-                    ):
-                        vis = True
-                        d = delay
-                        GLib.timeout_add(
-                            d,
-                            lambda c=child: (
-                                c.remove_css_class("filter-hidden") or False
-                            ),
-                        )
-                        delay += 50
-                child = child.get_next_sibling()
-            was_visible = title.get_visible()
-            if vis and not was_visible:
-                title.set_visible(True)
-                fb.set_visible(True)
-                sep.set_visible(True)
-                title.remove_css_class("category-slide-out")
-                title.remove_css_class("category-slide")
-                GLib.timeout_add(
-                    10, lambda t=title: (t.add_css_class("category-slide") or False)
-                )
-            elif vis and was_visible:
-                title.remove_css_class("category-slide")
-                GLib.timeout_add(
-                    10, lambda t=title: (t.add_css_class("category-slide") or False)
-                )
-            elif not vis and was_visible:
-                title.remove_css_class("category-slide")
-                title.add_css_class("category-slide-out")
-                GLib.timeout_add(
-                    420,
-                    lambda t=title, f=fb, sp=sep: (
-                        t.set_visible(False)
-                        or f.set_visible(False)
-                        or sp.set_visible(False)
-                        or t.remove_css_class("category-slide-out")
-                        or False
-                    ),
-                )
+    def _category_has_visible_plugins(s, fb):
+        child = fb.get_first_child()
+        while child:
+            w = child.get_child()
+            if w and hasattr(w, "plugin") and s._ff(child):
+                return True
+            child = child.get_next_sibling()
         return False
 
+    def _sync_category_visibility(s):
+        """Hide category headers/separators when filtering leaves no plugins.
 
-# ----------------------------------------------------------------------
-# DISPLAY (output) configuration
-# ----------------------------------------------------------------------
+        Without this, searches can leave a lone category label like "Other"
+        visible even though none of that category's plugin cards match.
+        """
+        visible_sections = []
+        for cn, (header, fb, sep) in s.cd.items():
+            visible = s._category_has_visible_plugins(fb)
+            header.set_visible(visible)
+            fb.set_visible(visible)
+            visible_sections.append((visible, sep))
 
-
-def _fmt_refresh(mhz):
-    """Format a refresh rate (millihertz) for display, e.g. 60000 -> '60 Hz'."""
-    if not mhz:
-        return ""
-    hz = mhz / 1000.0
-    if abs(hz - round(hz)) < 0.0005:
-        return f"{int(round(hz))} Hz"
-    return f"{hz:.3f}".rstrip("0").rstrip(".") + " Hz"
+        remaining_visible = sum(1 for visible, _sep in visible_sections if visible)
+        seen_visible = 0
+        for visible, sep in visible_sections:
+            if visible:
+                seen_visible += 1
+                sep.set_visible(seen_visible < remaining_visible)
+            else:
+                sep.set_visible(False)
 
 
 def _parse_refresh(text):
-    """Parse a refresh string ('60 Hz', '59.951') back to millihertz."""
-    t = (text or "").lower().replace("hz", "").strip()
+    """Parse a refresh-rate string ('60', '59.97', '60.000 Hz') into mHz.
+
+    Returns 0 for empty input and a negative value for unparseable text,
+    which callers flag as invalid so it is never written to the config.
+    """
+    t = (text or "").strip().lower().replace("hz", "").strip()
     if not t:
         return 0
     try:
         return int(round(float(t) * 1000))
     except ValueError:
-        return 0
+        return -1
 
 
-def _build_mode(res, refresh_mhz):
-    """Compose a wayfire 'mode' value from a resolution and refresh (mHz)."""
-    res = (res or "").strip()
-    if not res:
-        return "default"
-    if refresh_mhz:
-        return f"{res}@{refresh_mhz}"
-    return res
+def _fmt_refresh(mhz):
+    """Format a refresh rate in mHz for display: 60000 -> '60.000 Hz'."""
+    try:
+        mhz = int(mhz)
+    except (TypeError, ValueError):
+        return ""
+    if mhz <= 0:
+        return ""
+    return f"{mhz / 1000:.3f} Hz"
 
 
-def _parse_mode(mode_str):
-    """Split a wayfire 'mode' value into (resolution, refresh_mHz, is_off)."""
-    if mode_str is None:
-        return (None, 0, False)
-    m = mode_str.strip()
-    if m == "off":
-        return (None, 0, True)
-    if m == "" or m == "default" or m.startswith("mirror"):
-        return (None, 0, False)
-    res, refresh = m, 0
-    if "@" in m:
-        res, rf = m.split("@", 1)
-        try:
-            val = float(rf.strip())
-            # Values < 1000 are Hz (e.g. 60, 59.951); >= 1000 are already mHz.
-            refresh = int(round(val if val >= 1000 else val * 1000))
-        except ValueError:
-            refresh = 0
-    res = res.strip()
+def _parse_mode(mode):
+    """Parse a wayfire.ini ``mode`` value -> ``(res, refresh_mhz, is_off)``.
+
+    Handles 'off', 'default'/'auto', 'mirror <output>', 'WxH' and
+    'WxH@<refresh>'. Wayfire stores the refresh in mHz
+    ('1920x1080@60000'); hand-written Hz values ('@60', '@59.97') are
+    tolerated and converted.
+    """
+    m = (mode or "").strip()
+    ml = m.lower()
+    if not m or ml in ("default", "auto") or ml.startswith("mirror"):
+        return "", 0, False
+    if ml == "off":
+        return "", 0, True
+    res, _sep, rate = m.partition("@")
+    res = res.strip().lower()
     if not re.match(r"^\d+x\d+$", res):
-        res = None
-    return (res, refresh, False)
+        return "", 0, False
+    mhz = 0
+    rate = rate.strip().lower().replace("hz", "").strip()
+    if rate:
+        try:
+            val = float(rate)
+            mhz = int(round(val)) if val >= 1000 else int(round(val * 1000))
+        except ValueError:
+            mhz = 0
+    return res, mhz, False
+
+
+def _build_mode(res, mhz):
+    """Build a wayfire.ini ``mode`` value from a resolution + refresh (mHz)."""
+    res = (res or "").strip()
+    if mhz and int(mhz) > 0:
+        return f"{res}@{int(mhz)}"
+    return res
 
 
 def _mode_human(res, ref_text):
-    """Human label for a resolution + refresh, e.g. '3440x1440@143.923'."""
+    """Human-readable mode description for the confirm-changes prompt."""
     res = (res or "").strip()
+    ref = (ref_text or "").strip()
     if not res:
-        return "default"
-    rf = _parse_refresh(ref_text)
-    if rf > 0:
-        hz = rf / 1000.0
-        hzs = f"{hz:.3f}".rstrip("0").rstrip(".")
-        return f"{res}@{hzs}"
-    return res
+        return _("auto")
+    return f"{res} @ {ref}" if ref else res
 
 
 class _DisplayConfirmDialog(Gtk.Window):
@@ -1699,7 +2049,7 @@ class _DisplayConfirmDialog(Gtk.Window):
         s._timer_id = 0
         s._done = False
 
-        s.set_title("Confirm Display Changes")
+        s.set_title(_("Confirm Display Changes"))
         s.add_css_class("confirm-window")
         s.set_decorated(False)
         s.set_resizable(False)
@@ -1718,7 +2068,7 @@ class _DisplayConfirmDialog(Gtk.Window):
 
         # header: title + close (X)
         hdr = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
-        title = Gtk.Label(label="Confirm Display Changes")
+        title = Gtk.Label(label=_("Confirm Display Changes"))
         title.set_xalign(0)
         title.set_hexpand(True)
         title.add_css_class("confirm-title")
@@ -1726,7 +2076,7 @@ class _DisplayConfirmDialog(Gtk.Window):
         xbtn = Gtk.Button.new_from_icon_name("window-close-symbolic")
         xbtn.add_css_class("confirm-close")
         xbtn.set_valign(Gtk.Align.CENTER)
-        xbtn.set_tooltip_text("Revert")
+        xbtn.set_tooltip_text(_("Revert"))
         xbtn.connect("clicked", lambda *_: s._finish("revert"))
         hdr.append(xbtn)
         card.append(hdr)
@@ -1756,9 +2106,9 @@ class _DisplayConfirmDialog(Gtk.Window):
         btns = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
         btns.set_halign(Gtk.Align.END)
         btns.set_margin_top(4)
-        revert = Gtk.Button(label="Revert")
+        revert = Gtk.Button(label=_("Revert"))
         revert.connect("clicked", lambda *_: s._finish("revert"))
-        keep = Gtk.Button(label="Keep Changes")
+        keep = Gtk.Button(label=_("Keep Changes"))
         keep.add_css_class("confirm-keep")
         keep.connect("clicked", lambda *_: s._finish("keep"))
         btns.append(revert)
@@ -1971,7 +2321,9 @@ class DisplayPage(Gtk.ScrolledWindow):
         desc = oi.get("description") or ""
         markup = f"<b>{GLib.markup_escape_text(name)}</b>"
         if is_primary:
-            markup += "  <span size='small'>\u2014 main display (running WCM)</span>"
+            markup += ("  <span size='small'>\u2014 "
+                       + GLib.markup_escape_text(_("main display (running WCM)"))
+                       + "</span>")
         if desc:
             markup += f"  <span size='small'>{GLib.markup_escape_text(desc)}</span>"
         title.set_markup(markup)
@@ -1979,7 +2331,7 @@ class DisplayPage(Gtk.ScrolledWindow):
         title.set_hexpand(True)
         title.add_css_class("plugin-title")
         hdr.append(title)
-        en_lbl = Gtk.Label(label="Enabled")
+        en_lbl = Gtk.Label(label=_("Enabled"))
         en_lbl.add_css_class("option-label")
         hdr.append(en_lbl)
         sw = Gtk.Switch()
@@ -1990,12 +2342,12 @@ class DisplayPage(Gtk.ScrolledWindow):
         rmb.set_valign(Gtk.Align.CENTER)
         if is_primary:
             rmb.set_sensitive(False)
-            rmb.set_tooltip_text(
-                "WCM is running on this display, so it can't be removed "
-                "\u2014 that would blank your screen. Move WCM to another "
-                "display to manage this one.")
+            rmb.set_tooltip_text(_(
+                "WCM is running on this display, so it can't be removed — "
+                "that would blank your screen. Move WCM to another "
+                "display to manage this one."))
         else:
-            rmb.set_tooltip_text("Remove this output (delete its config section)")
+            rmb.set_tooltip_text(_("Remove this output (delete its config section)"))
             rmb.connect("clicked", lambda w, n=name: s._confirm_remove(n))
         hdr.append(rmb)
         box.append(hdr)
@@ -2015,7 +2367,8 @@ class DisplayPage(Gtk.ScrolledWindow):
         for m in oi.get("modes", []):
             r = f"{m['width']}x{m['height']}"
             if r not in ref_by_res:
-                ref_by_res[r], _ = [], res_list.append(r)
+                ref_by_res[r] = []
+                res_list.append(r)
             ref_by_res[r].append(m["refresh"])
         res_list.sort(
             key=lambda r: -(int(r.split("x")[0]) * int(r.split("x")[1]))
@@ -2118,10 +2471,11 @@ class DisplayPage(Gtk.ScrolledWindow):
             lines = []
             if sw.get_active() and (
                     (_cur_res(), _cur_ref()) != (confirm["res"], confirm["ref"])):
-                lines.append(
-                    f"{name}: Mode \u2192 {_mode_human(_cur_res(), _cur_ref())}")
+                lines.append(_("{name}: Mode → {mode}").format(
+                    name=name, mode=_mode_human(_cur_res(), _cur_ref())))
             if _cur_tr() != (confirm["tr"] or "normal"):
-                lines.append(f"{name}: Rotation \u2192 {_cur_tr()}")
+                lines.append(_("{name}: Rotation → {rotation}").format(
+                    name=name, rotation=_cur_tr()))
             return lines
 
         def _confirm_keep():
@@ -2283,16 +2637,16 @@ class DisplayPage(Gtk.ScrolledWindow):
             row.append(widget)
             box.append(row)
 
-        add_row("Resolution", res_combo)
-        add_row("Refresh rate", ref_combo)
-        add_row("Scale", scale_spin)
+        add_row(_("Resolution"), res_combo)
+        add_row(_("Refresh rate"), ref_combo)
+        add_row(_("Scale"), scale_spin)
         pos_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
         pos_box.append(Gtk.Label(label="X"))
         pos_box.append(posx_spin)
         pos_box.append(Gtk.Label(label="Y"))
         pos_box.append(posy_spin)
-        add_row("Position", pos_box)
-        add_row("Rotation", tr_combo)
+        add_row(_("Position"), pos_box)
+        add_row(_("Rotation"), tr_combo)
 
         warn_lbl = Gtk.Label()
         warn_lbl.set_wrap(True)
@@ -2307,10 +2661,10 @@ class DisplayPage(Gtk.ScrolledWindow):
         sw.set_active(enabled0 or is_primary)
         if is_primary:
             sw.set_sensitive(False)
-            sw.set_tooltip_text(
-                "WCM is running on this display, so it can't be switched off "
-                "\u2014 that would blank your screen. Move WCM to another "
-                "display to turn this one off.")
+            sw.set_tooltip_text(_(
+                "WCM is running on this display, so it can't be switched off — "
+                "that would blank your screen. Move WCM to another "
+                "display to turn this one off."))
 
         # connect after initial values are set, then unblock
         sw.connect("notify::active", on_toggle)
@@ -2328,13 +2682,12 @@ class DisplayPage(Gtk.ScrolledWindow):
         cfg = s.app.config
         dlg = Gtk.AlertDialog()
         dlg.set_modal(True)
-        dlg.set_message(f"Remove output \u201c{name}\u201d?")
-        dlg.set_detail(
-            "This deletes its [output:" + name + "] section from "
-            "wayfire.ini. If the monitor is still connected it will reappear "
-            "unconfigured."
-        )
-        dlg.set_buttons(["Cancel", "Remove"])
+        dlg.set_message(_("Remove output “{name}”?").format(name=name))
+        dlg.set_detail(_(
+            "This deletes its [output:{name}] section from wayfire.ini. "
+            "If the monitor is still connected it will reappear unconfigured."
+        ).format(name=name))
+        dlg.set_buttons([_("Cancel"), _("Remove")])
         dlg.set_cancel_button(0)
         dlg.set_default_button(0)
 
@@ -2353,13 +2706,13 @@ class DisplayPage(Gtk.ScrolledWindow):
     def _build_add_row(s, cfg):
         row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
         row.set_margin_top(8)
-        lab = Gtk.Label(label="Add output")
+        lab = Gtk.Label(label=_("Add output"))
         lab.set_size_request(LABEL_W, -1)
         lab.set_xalign(0)
         lab.add_css_class("option-label")
         row.append(lab)
         ent = Gtk.Entry()
-        ent.set_placeholder_text("name from wlr-randr, e.g. HDMI-A-1")
+        ent.set_placeholder_text(_("name from wlr-randr, e.g. HDMI-A-1"))
         ent.set_hexpand(True)
         row.append(ent)
         btn = Gtk.Button.new_from_icon_name("list-add")
@@ -2390,7 +2743,7 @@ _INI_PALETTE = {
     True: {  # dark
         "section": "#f0b84d", "key": "#5fd6cb", "eq": "#5a6172",
         "val": "#d7d3cb", "num": "#c9a9e6", "bool": "#7fd1a6",
-        "comment": "#5a6172",
+        "comment": "#6d7488",
     },
     False: {  # light
         "section": "#b07818", "key": "#1f8f86", "eq": "#9a948c",
@@ -2440,7 +2793,7 @@ class LiveIniPanel(Gtk.Box):
         s._title.set_hexpand(True)
         s._title.set_ellipsize(Pango.EllipsizeMode.MIDDLE)
         hdr.append(s._title)
-        live = Gtk.Label(label="LIVE")
+        live = Gtk.Label(label=_("LIVE"))
         live.add_css_class("ini-live")
         hdr.append(live)
         s.append(hdr)
@@ -2656,29 +3009,29 @@ class WikiView(Gtk.Box):
 
         hdr = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
         hdr.add_css_class("ini-header")
-        editor_btn = Gtk.Button(label="\u2039 Close Help")
+        editor_btn = Gtk.Button(label="\u2039 " + _("Close Help"))
         editor_btn.add_css_class("wiki-back")
-        editor_btn.set_tooltip_text("Back to the WCM")
+        editor_btn.set_tooltip_text(_("Back to the WCM"))
         editor_btn.connect("clicked", lambda w: on_back())
         hdr.append(editor_btn)
 
         if s._web is not None:
             s._back = Gtk.Button.new_from_icon_name("go-previous")
             s._back.add_css_class("wiki-nav")
-            s._back.set_tooltip_text("Back")
+            s._back.set_tooltip_text(_("Back"))
             s._back.set_sensitive(False)
             s._back.connect("clicked", lambda w: s._web.go_back())
             hdr.append(s._back)
             s._fwd = Gtk.Button.new_from_icon_name("go-next")
             s._fwd.add_css_class("wiki-nav")
-            s._fwd.set_tooltip_text("Forward")
+            s._fwd.set_tooltip_text(_("Forward"))
             s._fwd.set_sensitive(False)
             s._fwd.connect("clicked", lambda w: s._web.go_forward())
             hdr.append(s._fwd)
         else:
             s._back = s._fwd = None
 
-        s._title = Gtk.Label(label="Wayfire Wiki")
+        s._title = Gtk.Label(label=_("Wayfire Wiki"))
         s._title.add_css_class("ini-title")
         s._title.set_xalign(0)
         s._title.set_hexpand(True)
@@ -2687,13 +3040,13 @@ class WikiView(Gtk.Box):
 
         reload_btn = Gtk.Button.new_from_icon_name("view-refresh")
         reload_btn.add_css_class("wiki-nav")
-        reload_btn.set_tooltip_text("Reload")
+        reload_btn.set_tooltip_text(_("Reload"))
         reload_btn.connect("clicked", lambda w: s.reload())
         hdr.append(reload_btn)
 
         ext_btn = Gtk.Button.new_from_icon_name("web-browser")
         ext_btn.add_css_class("wiki-nav")
-        ext_btn.set_tooltip_text("Open in external browser")
+        ext_btn.set_tooltip_text(_("Open in external browser"))
         ext_btn.connect("clicked", lambda w: s._open_external(s._url) if s._url else None)
         hdr.append(ext_btn)
         s.append(hdr)
@@ -2729,19 +3082,19 @@ class WikiView(Gtk.Box):
             msg.set_wrap(True)
             msg.set_justify(Gtk.Justification.CENTER)
             msg.add_css_class("wiki-fallback")
-            msg.set_markup(
+            msg.set_markup(_(
                 "<b>In-app wiki needs WebKitGTK</b>\n\n"
                 "Install the GTK4 build (e.g. <tt>webkit2gtk-6.0</tt> / "
                 "<tt>webkitgtk-6.0</tt>) to read wiki pages right here. "
                 "For now you can open the page in your browser."
-            )
+            ))
             box.append(msg)
             s._fb_label = Gtk.Label()
             s._fb_label.set_wrap(True)
             s._fb_label.set_justify(Gtk.Justification.CENTER)
             s._fb_label.add_css_class("wiki-fallback")
             box.append(s._fb_label)
-            ob = Gtk.Button(label="Open in browser")
+            ob = Gtk.Button(label=_("Open in browser"))
             ob.add_css_class("action-btn")
             ob.set_halign(Gtk.Align.CENTER)
             ob.connect("clicked", lambda w: s._open_external(s._url) if s._url else None)
@@ -2767,24 +3120,24 @@ class WikiView(Gtk.Box):
         head.set_wrap(True)
         head.set_justify(Gtk.Justification.CENTER)
         head.add_css_class("wiki-fallback")
-        head.set_markup("<b>This page couldn't be loaded in-app</b>")
+        head.set_markup(_("<b>This page couldn't be loaded in-app</b>"))
         box.append(head)
         s._err_label = Gtk.Label()
         s._err_label.set_wrap(True)
         s._err_label.set_justify(Gtk.Justification.CENTER)
         s._err_label.add_css_class("wiki-fallback")
-        s._err_label.set_text(
+        s._err_label.set_text(_(
             "WebKit couldn't render the page (this is usually a WebKitGTK or "
             "Wayland issue, not the wiki). You can open it in your browser."
-        )
+        ))
         box.append(s._err_label)
         btns = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
         btns.set_halign(Gtk.Align.CENTER)
-        retry = Gtk.Button(label="Retry")
+        retry = Gtk.Button(label=_("Retry"))
         retry.add_css_class("wiki-nav")
         retry.connect("clicked", lambda w: s.reload())
         btns.append(retry)
-        ob = Gtk.Button(label="Open in browser")
+        ob = Gtk.Button(label=_("Open in browser"))
         ob.add_css_class("action-btn")
         ob.connect("clicked", lambda w: s._open_external(s._url) if s._url else None)
         btns.append(ob)
@@ -2797,8 +3150,8 @@ class WikiView(Gtk.Box):
 
     def _show_error(s, url="", msg=""):
         if getattr(s, "_err_label", None) is not None:
-            text = ("WebKit couldn't render the page (usually a WebKitGTK or "
-                    "Wayland issue, not the wiki).")
+            text = _("WebKit couldn't render the page (usually a WebKitGTK "
+                     "or Wayland issue, not the wiki).")
             if msg:
                 text += f"\n\n{msg}"
             if url:
@@ -2811,7 +3164,7 @@ class WikiView(Gtk.Box):
         s._url = url
         s._load_ok = False
         s._load_retries = 0
-        s._title.set_text("Wayfire Wiki")
+        s._title.set_text(_("Wayfire Wiki"))
         s._show_web()
         if s._web is not None:
             s._web.load_uri(url)
@@ -2906,11 +3259,11 @@ class WikiView(Gtk.Box):
                     300 * s._load_retries,
                     lambda: (s._show_web(), s._web.load_uri(url), False)[2])
                 return True  # suppress WebKit's default error page while we retry
-        s._title.set_text("Couldn't load page")
+        s._title.set_text(_("Couldn't load page"))
         s._show_error(failing_uri or s._url, msg)
         return True  # we showed our own page; suppress WebKit's default one
 
-    def _on_web_crash(s, *_):
+    def _on_web_crash(s, *_args):
         # bwrap/userns failures surface as a terminated web process. If we
         # haven't already, disable the sandbox and retry once — the only
         # recovery path on WebKit 6.0. Otherwise show the fallback page.
@@ -2920,14 +3273,14 @@ class WikiView(Gtk.Box):
             if s._url and s._web is not None:
                 GLib.timeout_add(250, lambda: (s._web.load_uri(s._url), False)[1])
             return False
-        s._title.set_text("Couldn't render the page")
-        s._show_error(s._url, "The WebKit process stopped unexpectedly.")
+        s._title.set_text(_("Couldn't render the page"))
+        s._show_error(s._url, _("The WebKit process stopped unexpectedly."))
         return False
 
 
 class WCM(Gtk.ApplicationWindow):
-    def __init__(s, app):
-        super().__init__(application=app, title="Wayfire Config Manager")
+    def __init__(s, app, config_path=None):
+        super().__init__(application=app, title=_("Wayfire Config Manager"))
         # The side panel is collapsed by default, so the window opens at the
         # usual (panel-less) WCM size and grows wider when the panel is opened.
         s.set_default_size(1000, 600)
@@ -2939,8 +3292,8 @@ class WCM(Gtk.ApplicationWindow):
                 s.set_icon_name("wcm")
             except:
                 pass
-        s.config = WayfireConfigFile(get_config_path())
-        s.wf_shell_config = WayfireConfigFile(get_wfshell_config_path())
+        s.config = WayfireConfigFile(get_config_path(config_path))
+        s.wf_shell_config = WayfireConfigFile(get_wfshell_config_path(config_path))
         s.preset_mgr = PresetManager()
         s.plugins = load_all_metadata()
         if not s.plugins:
@@ -2958,8 +3311,10 @@ class WCM(Gtk.ApplicationWindow):
         )
         _resolve_icon_dirs()
         s.current_plugin = None
-        s._dark = True
+        s._dark = _system_prefers_dark(True)
+        _apply_theme(s._dark)
         s._build_ui()
+        s._watch_system_theme()
         kc = Gtk.EventControllerKey()
         kc.connect("key-pressed", s._on_key)
         s.add_controller(kc)
@@ -2971,7 +3326,7 @@ class WCM(Gtk.ApplicationWindow):
             p.disp_name = sec.replace("-", " ").replace("_", " ").title()
             p.category = "Other"
             p.type = PluginType.WAYFIRE
-            p.tooltip = f"Configuration for {sec}"
+            p.tooltip = _("Configuration for {section}").format(section=sec)
             g = Option(name="General", type=OptionType.GROUP, plugin_name=sec)
             for k, v in s.config.get_section_options(sec).items():
                 o = Option()
@@ -3006,15 +3361,18 @@ class WCM(Gtk.ApplicationWindow):
             return SIDE_PANEL_W
         return SIDE_INIPANEL_W
 
+    def _side_toggle_icon_name(s, open_):
+        return "sidebar-hide-right-symbolic" if open_ else "sidebar-show-right-symbolic"
+
     def _set_side_panel(s, open_):
         if s._side_open == open_:
             return
         s._side_open = open_
         # Keep every "show/collapse panel" button (main + plugin panels) in sync.
-        for lbl in getattr(s, "_side_toggle_lbls", []):
-            lbl.set_text("\u203a" if open_ else "\u2039")
+        for img in getattr(s, "_side_toggle_imgs", []):
+            img.set_from_icon_name(s._side_toggle_icon_name(open_))
         for btn in getattr(s, "_side_toggle_btns", []):
-            btn.set_tooltip_text("Collapse panel" if open_ else "Show panel")
+            btn.set_tooltip_text(_("Hide side panel") if open_ else _("Show side panel"))
         if open_:
             s.left_stack.set_visible_child_name("thin")
             # Capture the panel-less width only when we're starting from a fully
@@ -3103,6 +3461,10 @@ class WCM(Gtk.ApplicationWindow):
         panel is expanded — in which case the left rail stays collapsed to the
         thin strip. Called after every navigation so the plugin/display/main
         panels and the expandable side panel never fight over the left stack."""
+        if hasattr(s, "_thin_back_btn"):
+            show_back = getattr(s, "_page_left_child", "main") == "plugin"
+            s._thin_back_btn.set_opacity(1.0 if show_back else 0.0)
+            s._thin_back_btn.set_sensitive(show_back)
         if getattr(s, "_side_open", False):
             s.left_stack.set_visible_child_name("thin")
         else:
@@ -3119,6 +3481,7 @@ class WCM(Gtk.ApplicationWindow):
         s.left_stack.set_size_request(0, -1)
         s.left_stack.set_hexpand(False)
         s.left_stack.set_halign(Gtk.Align.START)
+        s._left_panel_size_group = Gtk.SizeGroup(mode=Gtk.SizeGroupMode.HORIZONTAL)
         ml = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
 
         s._left_content = Gtk.Revealer()
@@ -3128,12 +3491,15 @@ class WCM(Gtk.ApplicationWindow):
         inner = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
 
         fl = Gtk.Label()
-        fl.set_markup("<span size='large'><b>Filter</b></span>")
+        fl.set_markup("<span size='large'><b>"
+                      + GLib.markup_escape_text(_("Filter")) + "</b></span>")
         fl.set_margin_top(14)
         fl.set_margin_start(14)
         fl.add_css_class("filter-label")
         inner.append(fl)
         s.search_entry = Gtk.SearchEntry()
+        s.search_entry.add_css_class("plugin-search")
+        s.search_entry.set_placeholder_text(_("Search plugins…"))
         s.search_entry.set_margin_start(14)
         s.search_entry.set_margin_end(14)
         s.search_entry.set_margin_top(8)
@@ -3143,7 +3509,7 @@ class WCM(Gtk.ApplicationWindow):
         # --- Master presets section ---
         ps = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
         ps.add_css_class("preset-section")
-        ph = Gtk.Label(label="PRESETS")
+        ph = Gtk.Label(label=_("PRESETS"))
         ph.set_xalign(0)
         ph.add_css_class("preset-header")
         ps.append(ph)
@@ -3155,15 +3521,15 @@ class WCM(Gtk.ApplicationWindow):
         pb = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
         pb.add_css_class("preset-btn-box")
         pb.set_margin_top(4)
-        lb = Gtk.Button(label="Load")
+        lb = Gtk.Button(label=_("Load"))
         lb.add_css_class("preset-load")
         lb.connect("clicked", s._on_master_load)
         pb.append(lb)
-        sb = Gtk.Button(label="Save")
+        sb = Gtk.Button(label=_("Save"))
         sb.add_css_class("preset-save")
         sb.connect("clicked", s._on_master_save)
         pb.append(sb)
-        db = Gtk.Button(label="Delete")
+        db = Gtk.Button(label=_("Delete"))
         db.add_css_class("preset-delete")
         db.connect("clicked", s._on_master_delete)
         pb.append(db)
@@ -3173,24 +3539,8 @@ class WCM(Gtk.ApplicationWindow):
         spacer = Gtk.Box()
         spacer.set_vexpand(True)
         inner.append(spacer)
-        theme_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
-        theme_box.set_halign(Gtk.Align.CENTER)
-        theme_box.set_margin_bottom(10)
-        theme_box.add_css_class("theme-switch-box")
-        dark_icon = Gtk.Label(label="\u263e")
-        dark_icon.set_tooltip_text("Dark")
-        theme_box.append(dark_icon)
-        s._theme_switch = Gtk.Switch()
-        s._theme_switch.set_active(False)
-        s._theme_switch.set_valign(Gtk.Align.CENTER)
-        s._theme_switch.connect("notify::active", s._on_theme_toggle)
-        theme_box.append(s._theme_switch)
-        light_icon = Gtk.Label(label="\u2600")
-        light_icon.set_tooltip_text("Light")
-        theme_box.append(light_icon)
-        inner.append(theme_box)
         inner.append(s._make_side_toggle_btn())
-        disp_btn = s._make_button("DISPLAY", "preferences-desktop-display")
+        disp_btn = s._make_button(_("Display"), "preferences-desktop-display")
         disp_btn.add_css_class("action-btn")
         disp_btn.set_margin_start(14)
         disp_btn.set_margin_end(14)
@@ -3198,14 +3548,14 @@ class WCM(Gtk.ApplicationWindow):
         disp_btn.connect("clicked", s.open_display)
         inner.append(disp_btn)
 
-        ob = s._make_button("Outputs", "video-display")
+        ob = s._make_button(_("Outputs"), "video-display")
         ob.add_css_class("action-btn")
         ob.set_margin_start(14)
         ob.set_margin_end(14)
         ob.set_margin_bottom(8)
         ob.connect("clicked", s._launch_wd)
         inner.append(ob)
-        cb = s._make_button("Close", "window-close")
+        cb = s._make_button(_("Close"), "window-close")
         cb.add_css_class("action-btn")
         cb.add_css_class("close-btn")
         cb.set_margin_start(14)
@@ -3215,6 +3565,7 @@ class WCM(Gtk.ApplicationWindow):
         inner.append(cb)
         s._left_content.set_child(inner)
         ml.append(s._left_content)
+        s._left_panel_size_group.add_widget(ml)
         s.left_stack.add_named(ml, "main")
         pl = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         s.pnl = Gtk.Label()
@@ -3244,7 +3595,7 @@ class WCM(Gtk.ApplicationWindow):
         s.eb.add_css_class("enabled-toggle")
         s.ec = Gtk.CheckButton()
         s.eb.append(s.ec)
-        s.el = Gtk.Label(label="Use This Plugin")
+        s.el = Gtk.Label(label=_("Use This Plugin"))
         s.eb.append(s.el)
         s.ec.connect("toggled", s._on_pe)
         pl.append(s.eb)
@@ -3253,7 +3604,7 @@ class WCM(Gtk.ApplicationWindow):
         pps = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
         pps.add_css_class("preset-section")
         pps.set_margin_top(12)
-        pph = Gtk.Label(label="PLUGIN PRESETS")
+        pph = Gtk.Label(label=_("PLUGIN PRESETS"))
         pph.set_xalign(0)
         pph.add_css_class("preset-header")
         pps.append(pph)
@@ -3264,15 +3615,15 @@ class WCM(Gtk.ApplicationWindow):
         ppb = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
         ppb.add_css_class("preset-btn-box")
         ppb.set_margin_top(4)
-        plb = Gtk.Button(label="Load")
+        plb = Gtk.Button(label=_("Load"))
         plb.add_css_class("preset-load")
         plb.connect("clicked", s._on_plugin_load)
         ppb.append(plb)
-        psb = Gtk.Button(label="Save")
+        psb = Gtk.Button(label=_("Save"))
         psb.add_css_class("preset-save")
         psb.connect("clicked", s._on_plugin_save)
         ppb.append(psb)
-        pdb = Gtk.Button(label="Delete")
+        pdb = Gtk.Button(label=_("Delete"))
         pdb.add_css_class("preset-delete")
         pdb.connect("clicked", s._on_plugin_delete)
         ppb.append(pdb)
@@ -3283,15 +3634,15 @@ class WCM(Gtk.ApplicationWindow):
         sp2.set_vexpand(True)
         pl.append(sp2)
         pl.append(s._make_side_toggle_btn())
-        wk = s._make_button("Wiki", "help-browser")
+        wk = s._make_button(_("Wiki"), "help-browser")
         wk.add_css_class("action-btn")
         wk.set_margin_start(14)
         wk.set_margin_end(14)
         wk.set_margin_bottom(8)
-        wk.set_tooltip_text("Open the Wayfire wiki for this plugin")
+        wk.set_tooltip_text(_("Open the Wayfire wiki for this plugin"))
         wk.connect("clicked", s._open_wiki)
         pl.append(wk)
-        bb = s._make_button("Back", "go-previous")
+        bb = s._make_button(_("Back"), "go-previous")
         bb.add_css_class("action-btn")
         bb.add_css_class("back-btn")
         bb.set_margin_start(14)
@@ -3299,6 +3650,7 @@ class WCM(Gtk.ApplicationWindow):
         bb.set_margin_bottom(14)
         bb.connect("clicked", lambda w: s.open_page(None))
         pl.append(bb)
+        s._left_panel_size_group.add_widget(pl)
         s.left_stack.add_named(pl, "plugin")
 
 
@@ -3306,7 +3658,8 @@ class WCM(Gtk.ApplicationWindow):
         # --- DISPLAY left panel ---
         dlp = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         dtitle = Gtk.Label()
-        dtitle.set_markup("<span size='12000'><b>DISPLAY</b></span>")
+        dtitle.set_markup("<span size='12000'><b>"
+                          + GLib.markup_escape_text(_("DISPLAY")) + "</b></span>")
         dtitle.set_halign(Gtk.Align.CENTER)
         dtitle.set_margin_top(50)
         dtitle.set_margin_bottom(20)
@@ -3319,17 +3672,17 @@ class WCM(Gtk.ApplicationWindow):
         ddesc.set_halign(Gtk.Align.CENTER)
         ddesc.set_margin_start(12)
         ddesc.set_margin_end(12)
-        ddesc.set_text(
+        ddesc.set_text(_(
             "Set resolution, refresh rate, scale, position and rotation for "
             "each monitor, or turn outputs on and off. Changes are written "
             "to wayfire.ini."
-        )
+        ))
         ddesc.add_css_class("plugin-desc")
         dlp.append(ddesc)
         dsp = Gtk.Box()
         dsp.set_vexpand(True)
         dlp.append(dsp)
-        drb = s._make_button("Detect Outputs", "view-refresh")
+        drb = s._make_button(_("Detect Outputs"), "view-refresh")
         drb.add_css_class("action-btn")
         drb.add_css_class("back-btn")
         drb.set_margin_start(14)
@@ -3338,7 +3691,7 @@ class WCM(Gtk.ApplicationWindow):
         drb.connect("clicked",
                     lambda w: s.display_page and s.display_page.reload())
         dlp.append(drb)
-        dbb = s._make_button("Back", "go-previous")
+        dbb = s._make_button(_("Back"), "go-previous")
         dbb.add_css_class("action-btn")
         dbb.add_css_class("back-btn")
         dbb.set_margin_start(14)
@@ -3346,6 +3699,7 @@ class WCM(Gtk.ApplicationWindow):
         dbb.set_margin_bottom(14)
         dbb.connect("clicked", lambda w: s.open_page(None))
         dlp.append(dbb)
+        s._left_panel_size_group.add_widget(dlp)
         s.left_stack.add_named(dlp, "display")
         gb.append(s.left_stack)
         s.main_stack = Gtk.Stack()
@@ -3363,15 +3717,64 @@ class WCM(Gtk.ApplicationWindow):
         thin.set_hexpand(False)
         thin.set_halign(Gtk.Align.START)
         thin.add_css_class("left-panel")
-        back_thin = Gtk.Button.new_from_icon_name("go-previous")
-        back_thin.add_css_class("flat")
-        back_thin.set_tooltip_text("Close panel")
-        back_thin.set_margin_top(8)
+        back_thin = Gtk.Button.new_from_icon_name("go-previous-symbolic")
+        back_thin.add_css_class("wiki-nav")
+        back_thin.add_css_class("side_toggle_btn")
+        back_thin.set_tooltip_text(_("Close panel"))
+        back_thin.set_margin_start(14)
+        back_thin.set_margin_end(14)
+        back_thin.set_margin_top(10)
+        back_thin.set_margin_bottom(8)
         back_thin.connect("clicked", s._toggle_side_panel)
         thin.append(back_thin)
+
+        brand = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
+        brand.set_vexpand(True)
+        brand.set_valign(Gtk.Align.CENTER)
+        brand.set_halign(Gtk.Align.CENTER)
+        brand.add_css_class("thin-brand")
+
+        badge_path = s._make_wayfire_rail_badge()
+        if badge_path:
+            badge = Gtk.Picture.new_for_filename(badge_path)
+            badge.set_size_request(40, 320)
+            badge.set_can_shrink(True)
+            badge.add_css_class("thin-brand-badge")
+            brand.append(badge)
+        else:
+            # Fallback for systems that cannot render the SVG badge: still show
+            # a neat stacked rail without using unsupported Gtk.Label rotation.
+            rail_icon = (
+                find_icon("wcm.svg")
+                or find_icon("wcm.png")
+                or find_icon("wayfire.svg")
+                or find_icon("wayfire.png")
+            )
+            if rail_icon:
+                top_img = Gtk.Image.new_from_file(rail_icon)
+                top_img.set_pixel_size(18)
+                top_img.add_css_class("thin-brand-icon")
+                brand.append(top_img)
+            for ch in "WAYFIRE":
+                ll = Gtk.Label(label=ch)
+                ll.add_css_class("thin-brand-letter")
+                ll.set_halign(Gtk.Align.CENTER)
+                brand.append(ll)
+
+        thin.append(brand)
+
+        s._thin_back_btn = Gtk.Button.new_from_icon_name("go-previous")
+        s._thin_back_btn.add_css_class("thin-back-btn")
+        s._thin_back_btn.set_tooltip_text(_("Back to plugin selection"))
+        s._thin_back_btn.set_opacity(0.0)
+        s._thin_back_btn.set_sensitive(False)
+        s._thin_back_btn.connect("clicked", lambda w: s.open_page(None))
+        thin.append(s._thin_back_btn)
+
         s.left_stack.add_named(thin, "thin")
         s.left_stack.set_visible_child_name("main")
         s.left_stack.set_hhomogeneous(False)
+        s._sync_left_panel()
 
         # --- Live .ini panel + embedded wiki on the right ---
         s.ini_panel = LiveIniPanel()
@@ -3424,6 +3827,75 @@ class WCM(Gtk.ApplicationWindow):
         s.plugin_page = None
         s.display_page = None
 
+    def _make_wayfire_rail_badge(s):
+        """Create a small SVG badge used in the collapsed left rail.
+
+        This avoids Gtk.Label.set_angle(), which is not available in GTK4, and
+        avoids relying on CSS transforms, which some GTK themes/builds ignore.
+        """
+        try:
+            cache_dir = os.path.join(tempfile.gettempdir(), "pywcm")
+            os.makedirs(cache_dir, exist_ok=True)
+            path = os.path.join(cache_dir, "wayfire-rail-badge.svg")
+            if not os.path.exists(path):
+                svg = """<svg xmlns="http://www.w3.org/2000/svg" width="44" height="320" viewBox="0 0 44 320">
+  <defs>
+    <filter id="glow" x="-80%" y="-80%" width="260%" height="260%">
+      <feGaussianBlur stdDeviation="2.2" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <linearGradient id="gold" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffd36c"/>
+      <stop offset="0.55" stop-color="#d99b20"/>
+      <stop offset="1" stop-color="#9f6812"/>
+    </linearGradient>
+  </defs>
+
+  <g opacity="0.95">
+    <text x="22" y="170"
+          transform="rotate(-90 22 170)"
+          text-anchor="middle"
+          dominant-baseline="middle"
+          font-family="Cantarell, Noto Sans, Segoe UI, sans-serif"
+          font-size="25"
+          font-weight="900"
+          letter-spacing="6.5"
+          fill="url(#gold)"
+          filter="url(#glow)">WAYFIRE</text>
+  </g>
+
+  <g transform="translate(22 28)" filter="url(#glow)">
+    <path d="M0,-16 L14,-8 L14,8 L0,16 L-14,8 L-14,-8 Z"
+          fill="#111827" stroke="#d99b20" stroke-width="1.8"/>
+    <path d="M0,-11 C8,-10 12,-2 7,5 C4,11 -5,11 -9,5 C-12,-2 -7,-10 0,-11Z"
+          fill="#e94124"/>
+    <path d="M0,-12 C-6,-6 -6,4 0,10 C6,4 6,-6 0,-12Z"
+          fill="#f2b11b"/>
+    <path d="M-10,2 C-3,2 5,-3 9,-8 C10,1 6,9 -2,11 C-6,9 -9,6 -10,2Z"
+          fill="#11a37f"/>
+  </g>
+
+  <g transform="translate(22 292)" filter="url(#glow)">
+    <path d="M0,-16 L14,-8 L14,8 L0,16 L-14,8 L-14,-8 Z"
+          fill="#111827" stroke="#d99b20" stroke-width="1.8"/>
+    <path d="M0,-11 C8,-10 12,-2 7,5 C4,11 -5,11 -9,5 C-12,-2 -7,-10 0,-11Z"
+          fill="#e94124"/>
+    <path d="M0,-12 C-6,-6 -6,4 0,10 C6,4 6,-6 0,-12Z"
+          fill="#f2b11b"/>
+    <path d="M-10,2 C-3,2 5,-3 9,-8 C10,1 6,9 -2,11 C-6,9 -9,6 -10,2Z"
+          fill="#11a37f"/>
+  </g>
+</svg>
+"""
+                with open(path, "w", encoding="utf-8") as fh:
+                    fh.write(svg)
+            return path
+        except Exception:
+            return None
+
     def _make_side_toggle_btn(s):
         """Create a 'show / collapse side panel' button. Several of these can
         exist (one per left panel), so each is registered and kept in sync by
@@ -3431,7 +3903,7 @@ class WCM(Gtk.ApplicationWindow):
         turn collapses the left rail to the thin strip for consistency."""
         if not hasattr(s, "_side_toggle_btns"):
             s._side_toggle_btns = []
-            s._side_toggle_lbls = []
+            s._side_toggle_imgs = []
         open_ = getattr(s, "_side_open", False)
         btn = Gtk.Button()
         btn.add_css_class("wiki-nav")
@@ -3439,15 +3911,15 @@ class WCM(Gtk.ApplicationWindow):
         btn.set_margin_start(14)
         btn.set_margin_end(14)
         btn.set_margin_bottom(8)
-        lbl = Gtk.Label(label="\u203a" if open_ else "\u2039")
-        btn.set_child(lbl)
-        btn.set_tooltip_text("Collapse panel" if open_ else "Show panel")
+        img = Gtk.Image.new_from_icon_name(s._side_toggle_icon_name(open_))
+        btn.set_child(img)
+        btn.set_tooltip_text(_("Hide side panel") if open_ else _("Show side panel"))
         btn.connect("clicked", s._toggle_side_panel)
         s._side_toggle_btns.append(btn)
-        s._side_toggle_lbls.append(lbl)
+        s._side_toggle_imgs.append(img)
         # Keep the legacy single-button references pointing at the first one.
         s._side_toggle_btn = s._side_toggle_btns[0]
-        s._side_toggle_lbl = s._side_toggle_lbls[0]
+        s._side_toggle_img = s._side_toggle_imgs[0]
         return btn
 
     def _make_button(s, text, icon):
@@ -3522,13 +3994,45 @@ class WCM(Gtk.ApplicationWindow):
             return s.wf_shell_config
         return s.config
 
-    def _on_theme_toggle(s, switch, pspec):
-        s._dark = not switch.get_active()
-        _apply_theme(s._dark)
+    def _sync_system_theme(s, *_args):
+        dark = _system_prefers_dark(getattr(s, "_dark", True))
+        if dark == getattr(s, "_dark", None):
+            return False
+        s._dark = dark
+        _apply_theme(dark)
         # The editor's syntax colours are inline Pango markup, so re-render it
         # to pick up the new palette (the CSS-based chrome updates on its own).
         if getattr(s, "ini_panel", None) is not None:
             s.ini_panel.restyle()
+        return False
+
+    def _watch_system_theme(s):
+        """Follow the desktop light/dark preference while the app is open."""
+        settings = Gtk.Settings.get_default()
+        if settings is not None:
+            for prop in (
+                "gtk-theme-name",
+                "gtk-application-prefer-dark-theme",
+            ):
+                try:
+                    settings.connect(f"notify::{prop}", s._sync_system_theme)
+                except Exception:
+                    pass
+        try:
+            s._color_scheme_settings = Gio.Settings.new("org.gnome.desktop.interface")
+            s._color_scheme_settings.connect(
+                "changed::color-scheme", s._sync_system_theme
+            )
+        except Exception:
+            s._color_scheme_settings = None
+
+        # Some Wayfire / GTK setups do not emit a GTK notify signal when the
+        # portal/GSettings colour scheme moves back from prefer-dark to default.
+        # A light polling watch keeps the UI synced both ways without requiring
+        # a restart.
+        s._system_theme_watch_id = GLib.timeout_add_seconds(
+            1, lambda: (s._sync_system_theme(), True)[1]
+        )
 
     def _on_search(s, entry):
         s.main_page.set_filter(entry.get_text())
@@ -3544,6 +4048,7 @@ class WCM(Gtk.ApplicationWindow):
                 f"<span size='12000'><b>{plg.disp_name or plg.name}</b></span>"
             )
             s.pdl.set_markup(f"<span size='10000'><b>{plg.tooltip or ''}</b></span>")
+            _apply_tooltip(plg.tooltip, s.pnl, s.pdl)
             s._refresh_plugin_presets()
             if s.plugin_page:
                 s.main_stack.remove(s.plugin_page)
@@ -3595,6 +4100,8 @@ class WCM(Gtk.ApplicationWindow):
                 w.check.handler_block_by_func(w._on_t)
                 w.check.set_active(en)
                 w.check.handler_unblock_by_func(w._on_t)
+                if hasattr(w, "_refresh_visual_state"):
+                    w._refresh_visual_state()
                 break
 
     def _on_pe(s, c):
@@ -3629,7 +4136,7 @@ class WCM(Gtk.ApplicationWindow):
         vb = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
         vb.set_margin_start(16); vb.set_margin_end(16)
         vb.set_margin_top(16); vb.set_margin_bottom(16)
-        lbl = Gtk.Label(label="Preset name:")
+        lbl = Gtk.Label(label=_("Preset name:"))
         lbl.set_xalign(0)
         vb.append(lbl)
         entry = Gtk.Entry()
@@ -3637,9 +4144,9 @@ class WCM(Gtk.ApplicationWindow):
         vb.append(entry)
         bb = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
         bb.set_halign(Gtk.Align.END)
-        ok_btn = Gtk.Button(label="Save")
+        ok_btn = Gtk.Button(label=_("Save"))
         ok_btn.add_css_class("preset-save")
-        cancel_btn = Gtk.Button(label="Cancel")
+        cancel_btn = Gtk.Button(label=_("Cancel"))
 
         def do_save(w):
             name = entry.get_text().strip()
@@ -3681,7 +4188,7 @@ class WCM(Gtk.ApplicationWindow):
                     i += 1
             except Exception as e:
                 print(f"WCM: Failed to save master preset: {e}")
-        s._prompt_name("Save Master Preset", do)
+        s._prompt_name(_("Save Master Preset"), do)
 
     def _on_master_load(s, btn):
         name = s._master_combo.get_active_text()
@@ -3706,6 +4213,8 @@ class WCM(Gtk.ApplicationWindow):
                 w.check.handler_block_by_func(w._on_t)
                 w.check.set_active(w.plugin.enabled)
                 w.check.handler_unblock_by_func(w._on_t)
+                if hasattr(w, "_refresh_visual_state"):
+                    w._refresh_visual_state()
             # Refresh plugin page if open
             if s.current_plugin:
                 s.open_page(s.current_plugin)
@@ -3763,6 +4272,8 @@ class WCM(Gtk.ApplicationWindow):
                     w.check.handler_block_by_func(w._on_t)
                     w.check.set_active(plg.enabled)
                     w.check.handler_unblock_by_func(w._on_t)
+                    if hasattr(w, "_refresh_visual_state"):
+                        w._refresh_visual_state()
                     break
             # Update sidebar toggle
             s.ec.handler_block_by_func(s._on_pe)
@@ -3787,7 +4298,7 @@ class WCM(Gtk.ApplicationWindow):
             subprocess.Popen(["wdisplays"])
         except FileNotFoundError:
             d = Gtk.AlertDialog()
-            d.set_message("Cannot find program wdisplays.")
+            d.set_message(_("Cannot find program wdisplays."))
             d.show(s)
 
     def _on_key(s, ctrl, kv, kc, st):
@@ -3798,32 +4309,33 @@ class WCM(Gtk.ApplicationWindow):
 
 
 class WCMApp(Gtk.Application):
-    def __init__(s):
+    def __init__(s, config_path=None):
         super().__init__(
             application_id="org.wayfire.wcm", flags=Gio.ApplicationFlags.FLAGS_NONE
         )
         s.window = None
+        s.config_path = config_path
 
     def do_startup(s):
         Gtk.Application.do_startup(s)
-        _apply_theme(True)
+        _apply_theme(_system_prefers_dark(True))
 
     def do_activate(s):
         if not s.window:
-            s.window = WCM(s)
+            s.window = WCM(s, s.config_path)
         s.window.present()
 
 
 def main():
     import argparse
 
-    pa = argparse.ArgumentParser(description="Wayfire Config Manager")
-    pa.add_argument("-c", "--config", help="Wayfire config file")
-    pa.add_argument("-p", "--plugin", help="Plugin to open")
+    pa = argparse.ArgumentParser(description=_("Wayfire Config Manager"))
+    pa.add_argument("-c", "--config", help=_("Wayfire config file"))
+    pa.add_argument("-p", "--plugin", help=_("Plugin to open"))
+    pa.add_argument("-v", "--version", action="version",
+                    version=f"wcm {__version__}")
     args = pa.parse_args()
-    if args.config:
-        os.environ["WAYFIRE_CONFIG_FILE"] = args.config
-    app = WCMApp()
+    app = WCMApp(args.config)
     if args.plugin:
 
         def oap(a):

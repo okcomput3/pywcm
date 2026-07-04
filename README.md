@@ -19,6 +19,8 @@ Per the upstream developer's requirements:
 wcm.py              — GTK4 frontend (main window, pages, all option widgets)
 config_backend.py   — Line-preserving INI reader/writer (the backend)
 metadata.py         — XML metadata parser for plugin/option discovery
+i18n.py             — gettext setup + pure-Python .po→.mo compiler
+locale/             — translations (wcm.pot + per-language .po files)
 ```
 
 The backend and frontend are cleanly separated — the backend code is
@@ -78,6 +80,48 @@ Unlike `wdisplays` (which adjusts outputs at runtime via the
 output-management protocol but never persists them), the DISPLAY page
 saves directly to the config, so the settings survive a restart.
 
+## Translations / Multi-language
+
+WCM is translated with **gettext**, using the same scheme as the C++ WCM:
+
+- **UI strings** use the `wcm` domain. Shipped languages: **Spanish
+  (es_ES)**, **Romanian (ro)** and **Simplified Chinese (zh_CN)** — the
+  same set as upstream. Strings shared with the C++ WCM were ported
+  verbatim from its catalogs; strings new to this edition are
+  machine-assisted translations (review welcome).
+- **Plugin metadata** (plugin names, option names, descriptions from the
+  XML files) is translated through the per-plugin `wf-plugin-<name>`
+  domains that Wayfire itself installs — identical to the C++ WCM's
+  `dgettext("wf-plugin-" + name, …)`. So if your distro ships translated
+  Wayfire plugin catalogs, plugin pages localize automatically.
+
+The language follows your session locale (`LANGUAGE`, `LC_ALL`,
+`LC_MESSAGES`, `LANG`). To try a specific language just for WCM:
+
+```bash
+WCM_LANG=es_ES python3 wcm.py
+WCM_LANG=zh_CN python3 wcm.py
+```
+
+No build step is needed when running from a checkout: `.po` files under
+`locale/` are compiled to `.mo` on the fly (into `~/.cache/wcm/locale`)
+by a small pure-Python compiler, so the gettext command-line tools are
+not required at runtime. Installed copies use the standard
+`<prefix>/share/locale/<lang>/LC_MESSAGES/wcm.mo`; `setup.py` compiles
+and installs these for you. `WCM_LOCALEDIR` overrides the search path.
+
+### Adding a language
+
+```bash
+mkdir -p locale/de/LC_MESSAGES
+cp locale/wcm.pot locale/de/LC_MESSAGES/wcm.po
+# translate the msgstr entries, then just run wcm.py
+```
+
+After changing translatable strings in the source, run
+`./update-translations.sh` (needs `gettext` installed) to refresh
+`locale/wcm.pot` and merge it into every `.po`.
+
 ## Requirements
 
 - Python 3.8+
@@ -111,6 +155,12 @@ python3 wcm.py -c ~/.config/wayfire/wayfire.ini
 
 # Open a specific plugin at launch
 python3 wcm.py -p move
+
+# Print version
+python3 wcm.py --version
+
+# Force a UI language for this run
+WCM_LANG=ro python3 wcm.py
 ```
 
 ## Icon Resolution

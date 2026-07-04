@@ -14,6 +14,8 @@ from dataclasses import dataclass, field
 from typing import List, Optional, Tuple, Any
 from lxml import etree
 
+from i18n import gettext_metadata as _tr
+
 
 class OptionType(Enum):
     UNDEFINED = auto()
@@ -110,7 +112,7 @@ def _text(node):
     return ''
 
 
-def _parse_entry(entry_node):
+def _parse_entry(entry_node, plugin_name=''):
     """Parse a <entry> element inside a dynamic-list option."""
     e = CompoundEntry()
     e.prefix = entry_node.get('prefix', '')
@@ -119,9 +121,9 @@ def _parse_entry(entry_node):
     for child in entry_node:
         tag = str(child.tag)
         if tag == '_short':
-            e.disp_name = _text(child)
+            e.disp_name = _tr(plugin_name, _text(child))
         elif tag == '_long':
-            e.tooltip = _text(child)
+            e.tooltip = _tr(plugin_name, _text(child))
         elif tag == 'hint':
             h = _text(child)
             if h:
@@ -168,9 +170,9 @@ def _parse_option(opt_node, plugin_name):
         tag = str(child.tag)
 
         if tag == '_short':
-            opt.disp_name = _text(child)
+            opt.disp_name = _tr(plugin_name, _text(child))
         elif tag == '_long':
-            opt.tooltip = _text(child)
+            opt.tooltip = _tr(plugin_name, _text(child))
         elif tag == 'default':
             dtext = _text(child)
             if dtext:
@@ -210,13 +212,13 @@ def _parse_option(opt_node, plugin_name):
         elif tag == 'type' and opt.type == OptionType.DYNAMIC_LIST:
             opt.default_value = _text(child)
         elif tag == 'entry':
-            opt.entries.append(_parse_entry(child))
+            opt.entries.append(_parse_entry(child, plugin_name))
         elif tag == 'desc':
             val_node = child.find('value')
             name_node = child.find('_name')
             if val_node is not None and name_node is not None:
                 val = _text(val_node)
-                lname = _text(name_node)
+                lname = _tr(plugin_name, _text(name_node))
                 if opt.type == OptionType.INT:
                     try:
                         opt.int_labels.append((lname, int(val)))
@@ -239,9 +241,9 @@ def _parse_plugin_node(plugin_node):
         tag = str(child.tag)
 
         if tag == '_short':
-            plugin.disp_name = _text(child)
+            plugin.disp_name = _tr(plugin.name, _text(child))
         elif tag == '_long':
-            plugin.tooltip = _text(child)
+            plugin.tooltip = _tr(plugin.name, _text(child))
         elif tag == 'category':
             cat = _text(child)
             if cat:
@@ -258,7 +260,9 @@ def _parse_plugin_node(plugin_node):
             for gchild in child:
                 gtag = str(gchild.tag)
                 if gtag == '_short':
-                    group.name = _text(gchild)
+                    group.name = _tr(plugin.name, _text(gchild))
+                elif gtag == '_long':
+                    group.tooltip = _tr(plugin.name, _text(gchild))
                 elif gtag == 'option':
                     opt = _parse_option(gchild, plugin.name)
                     group.options.append(opt)
@@ -268,7 +272,9 @@ def _parse_plugin_node(plugin_node):
                     for sgchild in gchild:
                         sgtag = str(sgchild.tag)
                         if sgtag == '_short':
-                            subgroup.name = _text(sgchild)
+                            subgroup.name = _tr(plugin.name, _text(sgchild))
+                        elif sgtag == '_long':
+                            subgroup.tooltip = _tr(plugin.name, _text(sgchild))
                         elif sgtag == 'option':
                             opt = _parse_option(sgchild, plugin.name)
                             subgroup.options.append(opt)
@@ -396,6 +402,104 @@ def find_wfshell_metadata_dirs():
     return dirs
 
 
+ANIMATE_PLUGIN = 'animate'
+# Animate options whose dropdown should gain discovered extra animations.
+ANIM_TARGET_OPTIONS = ('open_animation', 'close_animation')
+
+
+def _iter_plugin_options(plugin):
+    """Yield every Option in a plugin, descending into groups/subgroups."""
+    stack = list(plugin.option_groups)
+    while stack:
+        opt = stack.pop()
+        yield opt
+        if opt.options:
+            stack.extend(opt.options)
+
+
+def _is_animation_extension(plugin):
+    """True if a plugin extends the animate plugin with extra animations.
+
+    Extension plugins (e.g. extra-animations, phodius-extras) describe
+    themselves as extending the animate plugin and are built from groups that
+    each carry a "<name>_duration" animation option.
+    """
+    if plugin.name == ANIMATE_PLUGIN:
+        return False
+    tip = (plugin.tooltip or '').lower()
+    if 'animate plugin' in tip:
+        return True
+    # Structural fallback: an Effects plugin whose groups carry animation
+    # duration options is almost certainly an animation set.
+    if (plugin.category or '').lower() == 'effects':
+        for grp in plugin.option_groups:
+            for opt in grp.options:
+                if (opt.type == OptionType.ANIMATION
+                        and opt.name.endswith('_duration')):
+                    return True
+    return False
+
+
+def collect_extra_animations(plugins):
+    """Scan loaded plugins for animation extensions.
+
+    Returns a list of (value, display_name) pairs. Each animation is identified
+    by a "<name>_duration" option of type animation: <name> is the value written
+    to the .ini (e.g. ``helix``), and the enclosing group's title (minus a
+    trailing "Settings") is the human-friendly label (e.g. ``Helix``).
+    """
+    found = []
+    seen = set()
+    for plugin in plugins:
+        if not _is_animation_extension(plugin):
+            continue
+        for grp in plugin.option_groups:
+            dur_opt = None
+            for opt in grp.options:
+                if (opt.type == OptionType.ANIMATION
+                        and opt.name.endswith('_duration')):
+                    dur_opt = opt
+                    break
+            if dur_opt is None:
+                continue
+            value = dur_opt.name[:-len('_duration')]
+            if not value or value in seen:
+                continue
+            seen.add(value)
+            disp = (grp.name or '').strip()
+            if disp.lower().endswith('settings'):
+                disp = disp[:-len('settings')].strip()
+            if not disp:
+                disp = value.replace('_', ' ').title()
+            found.append((value, disp))
+    return found
+
+
+def merge_extra_animations(plugins):
+    """Append discovered extra animations to the animate plugin's open/close
+    animation dropdowns, so they can be selected without editing the .ini.
+
+    This is fully dynamic: whatever animation-extension plugins are installed
+    alongside animate.xml get scanned and folded in at load time.
+    """
+    extras = collect_extra_animations(plugins)
+    if not extras:
+        return 0
+    animate = next((p for p in plugins if p.name == ANIMATE_PLUGIN), None)
+    if animate is None:
+        return 0
+    added = 0
+    for opt in _iter_plugin_options(animate):
+        if opt.name in ANIM_TARGET_OPTIONS and opt.type == OptionType.STRING:
+            existing = {v for _, v in opt.str_labels}
+            for value, disp in extras:
+                if value not in existing:
+                    opt.str_labels.append((disp, value))
+                    existing.add(value)
+                    added += 1
+    return added
+
+
 def load_all_metadata():
     """Load all wayfire and wf-shell metadata."""
     plugins = []
@@ -413,6 +517,15 @@ def load_all_metadata():
         plugins.extend(load_metadata_from_dir(d))
     for d in ws_dirs:
         plugins.extend(load_metadata_from_dir(d))
+
+    # Dynamically fold any installed extra-animation plugins (helix, burn,
+    # mercury, dali, ...) into the animate open/close animation dropdowns.
+    try:
+        n_anim = merge_extra_animations(plugins)
+        if n_anim:
+            print(f"WCM: Added {n_anim} extra animation choice(s) to animate")
+    except Exception as e:
+        print(f"WCM: Failed to merge extra animations: {e}")
 
     if plugins:
         cats = {}

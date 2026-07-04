@@ -1,8 +1,15 @@
 [Desktop Entry]
 Type=Application
 Name=Wayfire Config Manager
+Name[es_ES]=Gestor de configuración de Wayfire
+Name[ro]=Manager de configurare Wayfire
+Name[zh_CN]=Wayfire 配置管理器
 Comment=Configure Wayfire Compositor
+Comment[es_ES]=Configurar el compositor Wayfire
+Comment[ro]=Configurați compozitorul Wayfire
+Comment[zh_CN]=配置 Wayfire 合成器
 Exec=wcm
 Icon=wcm
 Terminal=false
 Categories=Settings;DesktopSettings;
+Keywords=wayfire;wayland;compositor;settings;config;
