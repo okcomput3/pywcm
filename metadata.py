@@ -440,7 +440,7 @@ def _is_animation_extension(plugin):
     return False
 
 
-def collect_extra_animations(plugins):
+def collect_extra_animations(plugins, enabled_plugins):
     """Scan loaded plugins for animation extensions.
 
     Returns a list of (value, display_name) pairs. Each animation is identified
@@ -450,8 +450,9 @@ def collect_extra_animations(plugins):
     """
     found = []
     seen = set()
+    enabled_plugins = set(enabled_plugins)
     for plugin in plugins:
-        if not _is_animation_extension(plugin):
+        if plugin.name not in enabled_plugins or not _is_animation_extension(plugin):
             continue
         for grp in plugin.option_groups:
             dur_opt = None
@@ -462,7 +463,7 @@ def collect_extra_animations(plugins):
                     break
             if dur_opt is None:
                 continue
-            value = dur_opt.name[:dur_opt.name.find('_')]
+            value = dur_opt.name[:-len('_duration')]
             if not value or value in seen:
                 continue
             seen.add(value)
@@ -475,27 +476,30 @@ def collect_extra_animations(plugins):
     return found
 
 
-def merge_extra_animations(plugins):
-    """Append discovered extra animations to the animate plugin's open/close
-    animation dropdowns, so they can be selected without editing the .ini.
+def merge_extra_animations(plugins, enabled_plugins):
+    """Refresh animate choices from enabled extensions; retain XML choices.
 
-    This is fully dynamic: whatever animation-extension plugins are installed
-    alongside animate.xml get scanned and folded in at load time.
+    Rebuild on each page visit so disabling a provider also removes its choices.
+    Return the number of newly added choices across the target options.
     """
-    extras = collect_extra_animations(plugins)
-    if not extras:
-        return 0
+    extras = collect_extra_animations(plugins, enabled_plugins)
     animate = next((p for p in plugins if p.name == ANIMATE_PLUGIN), None)
     if animate is None:
         return 0
+    added = 0
     for opt in _iter_plugin_options(animate):
         if opt.name in ANIM_TARGET_OPTIONS and opt.type == OptionType.STRING:
+            previous = set(opt.str_labels)
+            if not hasattr(opt, '_base_animation_labels'):
+                opt._base_animation_labels = list(opt.str_labels)
+            opt.str_labels = list(opt._base_animation_labels)
             existing = {v for _, v in opt.str_labels}
             for value, disp in extras:
                 if value not in existing:
                     opt.str_labels.append((disp, value))
                     existing.add(value)
-    return len(extras)                
+                    added += (disp, value) not in previous
+    return added
 
 
 def load_all_metadata():
@@ -515,15 +519,6 @@ def load_all_metadata():
         plugins.extend(load_metadata_from_dir(d))
     for d in ws_dirs:
         plugins.extend(load_metadata_from_dir(d))
-
-    # Dynamically fold any installed extra-animation plugins (helix, burn,
-    # mercury, dali, ...) into the animate open/close animation dropdowns.
-    try:
-        n_anim = merge_extra_animations(plugins)
-        if n_anim:
-            print(f"WCM: Added {n_anim} extra animation choice(s) to animate")
-    except Exception as e:
-        print(f"WCM: Failed to merge extra animations: {e}")
 
     if plugins:
         cats = {}

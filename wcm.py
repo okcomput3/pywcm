@@ -64,6 +64,7 @@ from config_backend import WayfireConfigFile, PresetManager, OutputManager
 __version__ = "0.2.0"
 from metadata import (
     load_all_metadata,
+    merge_extra_animations,
     load_metadata_from_dir,
     find_metadata_dirs,
     Plugin,
@@ -1355,9 +1356,8 @@ class PluginPage(Gtk.Notebook):
                     bx.append(Gtk.Label(label=f"\u26a0 {o.name}: {e}"))
                     traceback.print_exc()
             s._append_page(_(g.name or "General"), bx, s._pending_add, g.tooltip)
-        # Window-rules-type plugins (incl. the IPC interface) may have no
-        # metadata options at all — inject an editable rules list so they
-        # still get an add (+) button, like autostart.
+        # Older window-rules metadata may have no options. Still expose
+        # the editable rule list and add button.
         if s._is_winrules(plg) and not s._rules_done:
             s._pending_add = None
             bx = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
@@ -1368,7 +1368,7 @@ class PluginPage(Gtk.Notebook):
             bx.set_margin_top(10)
             bx.set_margin_bottom(10)
             so = cfg.get_section_options(plg.name)
-            wr = s._make_winrules_box(cfg, plg, so, "rule_")
+            wr = s._make_winrules_box(cfg, plg, so, "")
             s._tag_reveal(wr)
             bx.append(wr)
             s._append_page(_("Rules"), bx, s._pending_add)
@@ -1387,13 +1387,7 @@ class PluginPage(Gtk.Notebook):
 
     @staticmethod
     def _is_winrules(plg):
-        n = (plg.name or "").lower()
-        d = (plg.disp_name or "").lower()
-        return (
-            "window-rule" in n
-            or n in ("ipc-rules", "window-rules", "window-rules-ipc")
-            or "window rule" in d
-        )
+        return plg.name == "window-rules"
 
     def _append_page(s, name, bx, pending_add, tooltip=None):
         sc = Gtk.ScrolledWindow()
@@ -1438,6 +1432,8 @@ class PluginPage(Gtk.Notebook):
     def _make_dynlist(s, opt, cfg, plg):
         pxs = [e.prefix for e in opt.entries] if opt.entries else []
         so = cfg.get_section_options(plg.name)
+        if plg.name == "window-rules" or opt.name == "rules":
+            return s._make_winrules(opt, cfg, plg, so)
         if opt.name == "autostart" or pxs == [""]:
             return s._make_autostart(opt, cfg, plg, so)
         if any("binding" in p for p in pxs) or opt.name in (
@@ -1450,8 +1446,6 @@ class PluginPage(Gtk.Notebook):
                 return None
             s._br = True
             return s._make_bindings(opt, cfg, plg, so)
-        if plg.name == "window-rules" or opt.name == "rules":
-            return s._make_winrules(opt, cfg, plg, so)
         fr = Gtk.Frame(label=opt.disp_name or opt.name)
         _apply_tooltip(opt.tooltip, fr)
         bx = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
@@ -1506,12 +1500,7 @@ class PluginPage(Gtk.Notebook):
         bx.append(r)
 
     def _make_winrules(s, opt, cfg, plg, so):
-        pfx = "rule_"
-        if opt.entries:
-            for e in opt.entries:
-                if e.prefix:
-                    pfx = e.prefix
-                    break
+        pfx = opt.entries[0].prefix if opt.entries else ""
         return s._make_winrules_box(cfg, plg, so, pfx)
 
     def _make_winrules_box(s, cfg, plg, so, pfx):
@@ -1519,7 +1508,7 @@ class PluginPage(Gtk.Notebook):
         for k, v in so.items():
             if k.startswith(pfx):
                 bx.append(s._make_wr_row(k, v, cfg, plg, bx))
-        s._pending_add = lambda: s._add_wr(cfg, plg, bx, pfx)
+        s._pending_add = lambda: s._add_wr(cfg, plg, bx, pfx or "rule_")
         s._rules_done = True
         return bx
 
@@ -2214,7 +2203,38 @@ class DisplayPage(Gtk.ScrolledWindow):
         s._root.set_margin_top(14)
         s._root.set_margin_bottom(14)
         s.set_child(s._root)
+        s._hotplug_source = 0
+        s._monitor_handler = None
+        s._monitors = s.get_display().get_monitors()
+        s.connect("map", s._watch_outputs)
+        s.connect("unmap", s._unwatch_outputs)
         s.reload()
+
+    def _watch_outputs(s, *_):
+        if s._monitor_handler is None:
+            s._monitor_handler = s._monitors.connect("items-changed", s._outputs_changed)
+        s._outputs_changed()
+
+    def _unwatch_outputs(s, *_):
+        if s._monitor_handler is not None:
+            s._monitors.disconnect(s._monitor_handler)
+            s._monitor_handler = None
+        if s._hotplug_source:
+            GLib.source_remove(s._hotplug_source)
+            s._hotplug_source = 0
+
+    def _outputs_changed(s, *_):
+        # Coalesce connector events and allow the output protocol to settle.
+        if not s._hotplug_source:
+            s._hotplug_source = GLib.timeout_add(500, s._refresh_outputs)
+
+    def _refresh_outputs(s):
+        # Keep the existing rollback alive until the user confirms or times out.
+        if s._active_confirm is not None or s._confirm_sources:
+            return True
+        s._hotplug_source = 0
+        s.reload()
+        return False
 
     def reload(s, *_):
         # Rebuilding the cards invalidates the widgets a pending confirm
@@ -2268,7 +2288,7 @@ class DisplayPage(Gtk.ScrolledWindow):
         if win_out and any(oi["name"] == win_out for oi in merged):
             primary = win_out
         else:
-            for oi in merged:
+            for oi in detected:
                 m = cfg.get_option(OutputManager.section_name(oi["name"]), "mode")
                 on = (m.strip() != "off") if m is not None else oi.get("enabled", True)
                 if on:
@@ -3675,7 +3695,8 @@ class WCM(Gtk.ApplicationWindow):
         ddesc.set_text(_(
             "Set resolution, refresh rate, scale, position and rotation for "
             "each monitor, or turn outputs on and off. Changes are written "
-            "to wayfire.ini."
+            "to wayfire.ini. Connected displays refresh automatically; saved "
+            "settings are kept when a monitor is unplugged."
         ))
         ddesc.add_css_class("plugin-desc")
         dlp.append(ddesc)
@@ -4039,6 +4060,12 @@ class WCM(Gtk.ApplicationWindow):
 
     def open_page(s, plg=None):
         if plg:
+            if plg.name == "animate":
+                # Read the saved list on every visit, including external edits.
+                cfg = s.config
+                if cfg.path and os.path.isfile(cfg.path):
+                    cfg = WayfireConfigFile(cfg.path)
+                merge_extra_animations(s.plugins, cfg.get_enabled_plugins())
             s.current_plugin = plg
             s.eb.set_visible(not plg.is_core_plugin and plg.type != PluginType.WF_SHELL)
             s.ec.handler_block_by_func(s._on_pe)

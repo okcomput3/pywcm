@@ -249,11 +249,11 @@ def test_extra_animations_merge():
 
         plugins = load_metadata_from_dir(d)
 
-        extras = collect_extra_animations(plugins)
+        extras = collect_extra_animations(plugins, {"extra-animations"})
         assert ('helix', 'Helix') in extras
         assert ('burn', 'Burn') in extras
 
-        added = merge_extra_animations(plugins)
+        added = merge_extra_animations(plugins, {"extra-animations"})
         assert added == 4  # helix + burn, across open + close
 
         animate = next(p for p in plugins if p.name == 'animate')
@@ -266,9 +266,16 @@ def test_extra_animations_merge():
                     assert ('Helix', 'helix') in opt.str_labels
 
         # Idempotent: a second merge must not duplicate entries.
-        added2 = merge_extra_animations(plugins)
+        added2 = merge_extra_animations(plugins, {"extra-animations"})
         assert added2 == 0
 
+        merge_extra_animations(plugins, set())
+        for grp in animate.option_groups:
+            for opt in grp.options:
+                if opt.name in ('open_animation', 'close_animation'):
+                    assert opt.str_labels == [('Fade', 'fade'), ('Zoom', 'zoom')]
+        assert collect_extra_animations(plugins, {'unrelated'}) == []
+        assert merge_extra_animations(plugins, {'extra-animations'}) == 4
         print("PASS: extra_animations_merge")
 
 

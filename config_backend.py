@@ -207,18 +207,64 @@ class WayfireConfigFile:
                 continue
             if in_section:
                 if e.kind == 'section':
-                    return i  # next section starts
-                last_idx = i + 1
+                    return last_idx
+                if e.kind != 'blank':
+                    last_idx = i + 1
         return last_idx
 
     def _rebuild_index(self):
         """Rebuild the section->key->index map after insertions/deletions."""
         self._section_map.clear()
         for i, e in enumerate(self.entries):
-            if e.kind == 'option' and e.section:
+            if e.kind == 'section':
+                # Empty sections still exist after their last option is removed
+                # or an unrelated edit rebuilds the index.
+                self._section_map.setdefault(e.section, {})
+            elif e.kind == 'option' and e.section:
                 if e.section not in self._section_map:
                     self._section_map[e.section] = {}
                 self._section_map[e.section][e.key] = i
+
+    def _consolidate_rule_sections(self):
+        """Repair duplicate window-rules headers left by older WCM versions.
+
+        Move their contents into the first block, preserving comments and
+        the last value of repeated keys (matching the reader's behavior).
+        Other sections and already-valid rule sections are left untouched.
+        """
+        starts = [i for i, entry in enumerate(self.entries)
+                  if entry.kind == 'section' and entry.section == 'window-rules']
+        if len(starts) < 2:
+            return
+        ranges = []
+        body = []
+        for start in starts:
+            end = start + 1
+            while end < len(self.entries) and self.entries[end].kind != 'section':
+                end += 1
+            ranges.append((start, end))
+            block = list(self.entries[start + 1:end])
+            while block and block[0].kind == 'blank':
+                block.pop(0)
+            while block and block[-1].kind == 'blank':
+                block.pop()
+            body.extend(block)
+        last = {entry.key: i for i, entry in enumerate(body)
+                if entry.kind == 'option'}
+        body = [entry for i, entry in enumerate(body)
+                if entry.kind != 'option' or last[entry.key] == i]
+        repaired = []
+        cursor = 0
+        for number, (start, end) in enumerate(ranges):
+            repaired.extend(self.entries[cursor:start])
+            if number == 0:
+                repaired.append(self.entries[start])
+                repaired.extend(body)
+                repaired.append(ConfigEntry('blank', '\n'))
+            cursor = end
+        repaired.extend(self.entries[cursor:])
+        self.entries = repaired
+        self._rebuild_index()
 
     def save(self, path=None):
         """Write the config back to disk, preserving all formatting."""
@@ -226,6 +272,22 @@ class WayfireConfigFile:
         if not path:
             raise ValueError("No path specified for saving")
 
+        self._consolidate_rule_sections()
+        # Repair spacing left by older versions when inserting into an empty
+        # rules section. Keep separators after rules and all comments intact.
+        gaps = set()
+        for i, entry in enumerate(self.entries):
+            if entry.kind != 'section' or entry.section != 'window-rules':
+                continue
+            end = i + 1
+            while end < len(self.entries) and self.entries[end].kind == 'blank':
+                end += 1
+            if end < len(self.entries) and self.entries[end].kind == 'option':
+                gaps.update(range(i + 1, end))
+        if gaps:
+            self.entries = [entry for i, entry in enumerate(self.entries)
+                            if i not in gaps]
+            self._rebuild_index()
         os.makedirs(os.path.dirname(path) or '.', exist_ok=True)
         with open(path, 'w') as f:
             for entry in self.entries:

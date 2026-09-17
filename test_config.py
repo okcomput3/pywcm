@@ -218,7 +218,108 @@ def test_comments_preserved_after_multiple_edits():
         os.unlink(path)
 
 
+def test_reuse_section_after_removing_last_rule():
+    with tempfile.TemporaryDirectory() as directory:
+        path = os.path.join(directory, 'wayfire.ini')
+        cfg = WayfireConfigFile(path)
+        for _ in range(3):
+            cfg.set_option('window-rules', 'rule_0', '')
+            cfg.remove_option('window-rules', 'rule_0')
+        rule = 'on created if app_id is "foot" then maximize'
+        cfg.set_option('window-rules', 'rule_0', rule)
+        cfg.save()
+        with open(path) as f:
+            assert f.read() == f'[window-rules]\nrule_0 = {rule}\n'
+        assert WayfireConfigFile(path).get_option('window-rules', 'rule_0') == rule
+
+
+def test_empty_section_survives_unrelated_index_rebuild():
+    with tempfile.TemporaryDirectory() as directory:
+        path = os.path.join(directory, 'wayfire.ini')
+        original = '[window-rules]\n# Keep my rules here\n\n[core]\nplugins = window-rules\n'
+        with open(path, 'w') as f:
+            f.write(original)
+        cfg = WayfireConfigFile(path)
+        cfg.set_option('core', 'vwidth', '3')
+        cfg.remove_option('core', 'vwidth')
+        cfg.set_option('window-rules', 'rule_0', 'on created then maximize')
+        cfg.save()
+        with open(path) as f:
+            assert f.read() == original.replace(
+                '\n\n[core]', '\nrule_0 = on created then maximize\n\n[core]')
+
+
+def test_save_repairs_existing_duplicate_rule_sections():
+    with tempfile.TemporaryDirectory() as directory:
+        path = os.path.join(directory, 'wayfire.ini')
+        rule = 'on created if app_id is "foot" then maximize'
+        with open(path, 'w') as f:
+            f.write('[window-rules]\n\nrule_0 = ' + rule + '\n'
+                    + '[window-rules]\n\n' * 4)
+        cfg = WayfireConfigFile(path)
+        cfg.save()
+        with open(path) as f:
+            repaired = f.read()
+        assert repaired == '[window-rules]\nrule_0 = ' + rule + '\n\n'
+        cfg.save()
+        with open(path) as f:
+            assert f.read() == repaired
+        assert WayfireConfigFile(path).get_option('window-rules', 'rule_0') == rule
+        cfg.remove_option('window-rules', 'rule_0')
+        cfg.save()
+        cfg.set_option('window-rules', 'rule_0', rule)
+        cfg.save()
+        with open(path) as f:
+            assert f.read().count('[window-rules]') == 1
+
+
+def test_duplicate_rule_repair_keeps_rules_comments_and_other_sections():
+    with tempfile.TemporaryDirectory() as directory:
+        path = os.path.join(directory, 'wayfire.ini')
+        core = '[core]\n# Core options\nplugins = window-rules\n\n'
+        with open(path, 'w') as f:
+            f.write('[window-rules]\n# First rule\nrule_0 = old\n\n' + core
+                    + '[window-rules]\n# Second rule\nfoot = foot rule\n'
+                    + 'rule_0 = latest\n\n[move]\nactivate = test\n')
+        cfg = WayfireConfigFile(path)
+        cfg.save()
+        with open(path) as f:
+            text = f.read()
+        assert text.count('[window-rules]') == 1
+        assert core in text
+        assert '# First rule' in text and '# Second rule' in text
+        assert 'rule_0 = old' not in text
+        saved = WayfireConfigFile(path)
+        assert saved.get_section_options('window-rules') == {
+            'foot': 'foot rule', 'rule_0': 'latest'}
+        assert saved.get_option('move', 'activate') == 'test'
+        cfg.set_option('window-rules', 'rule_1', 'new rule')
+        cfg.save()
+        assert WayfireConfigFile(path).get_option('window-rules', 'rule_1') == 'new rule'
+
+
+def test_rule_spacing_after_add_remove_and_existing_gap():
+    with tempfile.TemporaryDirectory() as directory:
+        path = os.path.join(directory, 'wayfire.ini')
+        for content in ('[window-rules]\n\n[core]\nplugins = window-rules\n',
+                        '[window-rules]\n\nrule_0 = old\n\n[core]\nplugins = window-rules\n'):
+            with open(path, 'w') as f:
+                f.write(content)
+            cfg = WayfireConfigFile(path)
+            for _ in range(3):
+                cfg.set_option('window-rules', 'rule_0', 'on created then maximize')
+                cfg.save()
+                with open(path) as f:
+                    assert f.read() == ('[window-rules]\nrule_0 = on created then maximize\n'
+                                        '\n[core]\nplugins = window-rules\n')
+                cfg.remove_option('window-rules', 'rule_0')
+                cfg.save()
+
+
 if __name__ == '__main__':
+    test_rule_spacing_after_add_remove_and_existing_gap()
+    test_save_repairs_existing_duplicate_rule_sections()
+    test_duplicate_rule_repair_keeps_rules_comments_and_other_sections()
     test_read_and_preserve()
     test_get_option()
     test_set_existing_option()
@@ -227,4 +328,6 @@ if __name__ == '__main__':
     test_remove_option()
     test_enable_disable_plugin()
     test_comments_preserved_after_multiple_edits()
+    test_reuse_section_after_removing_last_rule()
+    test_empty_section_survives_unrelated_index_rebuild()
     print("\nAll tests passed!")
