@@ -7,7 +7,9 @@ import gi
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("Gdk", "4.0")
-import sys, os, subprocess, glob, shutil,  traceback, re
+import sys, os, subprocess, glob, shutil, traceback, re, math
+import copy
+from decimal import Decimal
 from gi.repository import Gtk, Gdk, GLib, Gio, GdkPixbuf, Pango
 
 
@@ -59,7 +61,7 @@ except Exception:
     _HAVE_WEBKIT = False
 
 from i18n import _
-from config_backend import WayfireConfigFile, PresetManager, OutputManager
+from config_backend import WayfireConfigFile, PresetManager, OutputManager, SaveCommittedError
 
 __version__ = "0.2.0"
 from metadata import (
@@ -904,6 +906,54 @@ def get_wfshell_config_path(config_override=None):
 
 
 LABEL_W = 200
+BINDING_PREFIXES = ("binding_", "repeatable_binding_", "always_binding_", "release_binding_")
+
+
+def _preset_error(parent, error):
+    _operation_error(parent, _("Preset operation failed"), error)
+
+
+def _operation_error(parent, title, error):
+    print(f"WCM: {title}: {error}")
+    if isinstance(parent, Gtk.Window):
+        dialog = Gtk.MessageDialog(
+            transient_for=parent, modal=True, buttons=Gtk.ButtonsType.CLOSE,
+            message_type=Gtk.MessageType.ERROR, text=title,
+            secondary_text=str(error))
+        dialog.connect("response", lambda window, *_: window.destroy())
+        dialog.present()
+
+
+EXTRA_WIKI_PLUGINS = {
+    'annotate', 'autorotate-iio', 'background-view', 'bench', 'crosshair',
+    'extra-animations', 'focus-steal-prevent', 'follow-focus', 'force-fullscreen',
+    'ghost', 'hide-cursor', 'keycolor', 'mag', 'obs', 'pin-view', 'showrepaint',
+    'view-shot', 'water', 'winzoom', 'workspace-names',
+}
+
+
+def plugin_wiki_url(plg):
+    if plg is not None and plg.type == PluginType.WF_SHELL:
+        return 'https://github.com/WayfireWM/wf-shell'
+    name = plg.name if plg is not None else ''
+    repo = 'wayfire-plugins-extra' if name in EXTRA_WIKI_PLUGINS else 'wayfire'
+    base = f'https://github.com/WayfireWM/{repo}/wiki/Configuration'
+    # Plugin identifiers stay stable when display names are translated.
+    return f'{base}#{name}' if name else base
+
+
+def option_tooltip(opt):
+    tip = opt.tooltip or ''
+    if 'criteria' in opt.hints:
+        tip += '\n\n' + _(
+            'Window matching examples:\n'
+            'all — every window; none — no windows\n'
+            'type is "toplevel" — normal application windows\n'
+            'app_id is "foot" — match an application\n'
+            'title contains "Terminal" — match a window title\n'
+            'Combine conditions with &, | and !, using parentheses.'
+        )
+    return tip.strip()
 
 
 def _apply_tooltip(text, *widgets):
@@ -963,7 +1013,7 @@ class OptionWidget(Gtk.Box):
         s.set_margin_top(2)
         s.set_margin_bottom(2)
         s.lbl = Gtk.Label(label=opt.disp_name or opt.name)
-        _apply_tooltip(opt.tooltip, s, s.lbl)
+        _apply_tooltip(option_tooltip(opt), s, s.lbl)
         s.lbl.set_size_request(LABEL_W, -1)
         s.lbl.set_xalign(0)
         s.lbl.set_hexpand(False)
@@ -973,11 +1023,11 @@ class OptionWidget(Gtk.Box):
         s.end_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
         s.end_box.set_hexpand(True)
         s.end_box.set_halign(Gtk.Align.FILL)
-        _apply_tooltip(opt.tooltip, s.end_box)
+        _apply_tooltip(option_tooltip(opt), s.end_box)
         s.append(s.end_box)
         cur = cfg.get_option(plg.name, opt.name)
         s._build(opt, cur)
-        _apply_tooltip(opt.tooltip, getattr(s, "ed", None))
+        _apply_tooltip(option_tooltip(opt), getattr(s, "ed", None))
         if opt.type in (OptionType.BOOL, OptionType.COLOR, OptionType.DOUBLE) or (
             opt.type == OptionType.INT and not opt.int_labels
         ):
@@ -998,7 +1048,10 @@ class OptionWidget(Gtk.Box):
                 s.ed = Gtk.ComboBoxText()
                 for lb, v in opt.int_labels:
                     s.ed.append(str(v), lb)
-                s.ed.set_active_id(str(_int(cur, opt.default_value)))
+                selected = str(_int(cur, opt.default_value))
+                if selected not in {str(value) for _, value in opt.int_labels}:
+                    s.ed.append(selected, selected)
+                s.ed.set_active_id(selected)
                 s.ed.connect("changed", lambda w: s._save(w.get_active_id() or "0"))
                 s.ed.set_hexpand(True)
             else:
@@ -1019,11 +1072,7 @@ class OptionWidget(Gtk.Box):
                 v = float(cur) if cur else float(opt.default_value)
             except (ValueError, TypeError):
                 v = 0.0
-            dec = (
-                len(str(opt.precision).split(".")[-1])
-                if "." in str(opt.precision)
-                else 3
-            )
+            dec = min(20, max(0, -Decimal(str(opt.precision)).normalize().as_tuple().exponent))
             adj = Gtk.Adjustment(
                 value=v,
                 lower=max(opt.min_val, -1e15),
@@ -1051,9 +1100,10 @@ class OptionWidget(Gtk.Box):
                 s.ed = Gtk.ComboBoxText()
                 for lb, v in opt.str_labels:
                     s.ed.append(v, lb)
-                s.ed.set_active_id(
-                    cur if cur is not None else str(opt.default_value or "")
-                )
+                selected = cur if cur is not None else str(opt.default_value or "")
+                if selected not in {value for _, value in opt.str_labels}:
+                    s.ed.append(selected, selected)
+                s.ed.set_active_id(selected)
                 s.ed.connect("changed", lambda w: s._save(w.get_active_id() or ""))
                 s.ed.set_hexpand(True)
                 s.end_box.append(s.ed)
@@ -1138,7 +1188,7 @@ class OptionWidget(Gtk.Box):
             return str(d or "300ms linear")
         if s.option.type == OptionType.COLOR:
             return str(d or "0 0 0 1")
-        return str(d or "")
+        return "" if d is None else str(d)
 
     def _values_equal(s, a, b):
         a = "" if a is None else str(a).strip()
@@ -1185,26 +1235,34 @@ class OptionWidget(Gtk.Box):
             s._text_save_id = 0
         s.config.set_option(s.plugin.name, s.option.name, str(v))
         s.config.save()
+        s.config._pending_edits.discard(s)
         s._update_modified_state()
 
+    def cancel_pending_edit(s):
+        if s._text_save_id:
+            GLib.source_remove(s._text_save_id)
+            s._text_save_id = 0
+        s.config._pending_edits.discard(s)
+
+    def flush_pending_edit(s):
+        if s in s.config._pending_edits:
+            text = s.ed.get_text()
+            s._save(text)
+
     def _on_text_changed(s, widget):
-        """Debounced live-save keeps typing smooth while preserving live updates."""
+        """Keep pending edits cancellable by presets and flushable on exit."""
         if s._block:
             return
-        if getattr(s, "_text_save_id", 0):
-            try:
-                GLib.source_remove(s._text_save_id)
-            except Exception:
-                pass
-            s._text_save_id = 0
-        text = str(widget.get_text())
+        s.cancel_pending_edit()
+        s.config._pending_edits.add(s)
 
         def do_save():
             s._text_save_id = 0
             if not s._block:
-                s.config.set_option(s.plugin.name, s.option.name, text)
-                s.config.save()
-                s._update_modified_state()
+                try:
+                    s._save(widget.get_text())
+                except OSError as error:
+                    print(f"WCM: Could not save edit; pending for retry: {error}")
             return False
 
         s._text_save_id = GLib.timeout_add(350, do_save)
@@ -1290,7 +1348,7 @@ class OptionWidget(Gtk.Box):
                         break
         finally:
             s._block = False
-        s._save(str(d or ""))
+        s._save(s._default_text())
 
 
 class SubgroupWidget(Gtk.Frame):
@@ -1355,6 +1413,8 @@ class PluginPage(Gtk.Notebook):
                 except Exception as e:
                     bx.append(Gtk.Label(label=f"\u26a0 {o.name}: {e}"))
                     traceback.print_exc()
+            if bx.get_first_child() is None:
+                s._append_help(bx, plg)
             s._append_page(_(g.name or "General"), bx, s._pending_add, g.tooltip)
         # Older window-rules metadata may have no options. Still expose
         # the editable rule list and add button.
@@ -1372,6 +1432,19 @@ class PluginPage(Gtk.Notebook):
             s._tag_reveal(wr)
             bx.append(wr)
             s._append_page(_("Rules"), bx, s._pending_add)
+
+        if s.get_n_pages() == 0:
+            bx = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
+            s._append_help(bx, plg)
+            s._append_page(_("General"), bx, None)
+
+    def _append_help(s, bx, plg):
+        label = Gtk.Label(label=_(
+            'This page has no editable options. See the plugin documentation for usage.'
+        ))
+        label.set_wrap(True)
+        bx.append(label)
+        bx.append(Gtk.LinkButton.new_with_label(plugin_wiki_url(plg), _("Plugin documentation")))
 
     def _next_reveal_index(s):
         i = s._reveal_i
@@ -1392,8 +1465,12 @@ class PluginPage(Gtk.Notebook):
     def _append_page(s, name, bx, pending_add, tooltip=None):
         sc = Gtk.ScrolledWindow()
         sc.set_vexpand(True)
+        # Reserve scrollbar space instead of covering the final editable row.
+        sc.set_overlay_scrolling(False)
         sc.set_child(bx)
         if pending_add is not None:
+            # Allow the last row to scroll clear of the floating add button.
+            bx.set_margin_bottom(max(bx.get_margin_bottom(), 84))
             ov = Gtk.Overlay()
             ov.set_vexpand(True)
             ov.set_child(sc)
@@ -1543,10 +1620,12 @@ class PluginPage(Gtk.Notebook):
         bx = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
         cn = []
         for k in so:
-            if k.startswith("command_"):
-                n = k[8:]
-                if n and n not in cn:
-                    cn.append(n)
+            for prefix in ("command_",) + BINDING_PREFIXES:
+                if k.startswith(prefix):
+                    n = k[len(prefix):]
+                    if n and n not in cn:
+                        cn.append(n)
+                    break
         for c in sorted(cn):
             bx.append(s._make_bw(c, cfg, plg, so, bx))
         s._pending_add = lambda: s._add_bind(cfg, plg, bx)
@@ -1561,7 +1640,11 @@ class PluginPage(Gtk.Notebook):
         rv = so.get(rk)
         pv = so.get(pk)
         av = so.get(ak)
-        if av is not None:
+        release_key = f"release_binding_{cn}"
+        release = so.get(release_key)
+        if release is not None:
+            bt, bv, bk = 3, release, release_key
+        elif av is not None:
             bt, bv, bk = 2, av, ak
         elif pv is not None:
             bt, bv, bk = 1, pv, pk
@@ -1574,6 +1657,12 @@ class PluginPage(Gtk.Notebook):
         fr.set_margin_top(1)
         fr.set_margin_bottom(1)
         exp = Gtk.Expander(label=_("Command {name}: {command}").format(name=cn, command=cv))
+        heading = exp.get_label_widget()
+        heading.set_ellipsize(Pango.EllipsizeMode.END)
+        heading.set_max_width_chars(48)
+        heading.set_hexpand(True)
+        heading.set_xalign(0)
+        heading.set_tooltip_text(heading.get_text())
         exp.set_expanded(not cv)
         exp.set_margin_top(4)
         exp.set_margin_bottom(4)
@@ -1594,6 +1683,7 @@ class PluginPage(Gtk.Notebook):
         tc.append_text(_("Regular"))
         tc.append_text(_("Repeat"))
         tc.append_text(_("Always"))
+        tc.append_text(_("Release"))
         tc.set_active(bt)
         tc.set_hexpand(True)
         tc.connect("changed", lambda w, c=cn: s._chg_bt(cfg, plg, c, w.get_active()))
@@ -1608,11 +1698,13 @@ class PluginPage(Gtk.Notebook):
         be = Gtk.Entry()
         be.set_text(bv)
         be.set_hexpand(True)
-        be.connect("changed", lambda w, b=bk: s._so(cfg, plg, b, w.get_text()))
+        be.connect("changed", lambda w: s._so(
+            cfg, plg, BINDING_PREFIXES[tc.get_active()] + cn, w.get_text()))
         br.append(be)
         gb = Gtk.Button.new_from_icon_name("document-edit")
         gb.add_css_class("grab-btn")
-        gb.connect("clicked", lambda w, e=be, b=bk: s._grab_for(e, cfg, plg, b))
+        gb.connect("clicked", lambda w: s._grab_for(
+            be, cfg, plg, BINDING_PREFIXES[tc.get_active()] + cn))
         br.append(gb)
         vb.append(br)
         cr = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
@@ -1626,9 +1718,10 @@ class PluginPage(Gtk.Notebook):
         ce.set_hexpand(True)
         ce.connect(
             "changed",
-            lambda w, e=exp, c=cn: e.set_label(
+            lambda w, e=heading, c=cn: e.set_text(
                 _("Command {name}: {command}").format(name=c, command=w.get_text())),
         )
+        ce.connect("changed", lambda w: heading.set_tooltip_text(heading.get_text()))
         ce.connect("changed", lambda w, c=ck: s._so(cfg, plg, c, w.get_text()))
         cr.append(ce)
         rm = Gtk.Button.new_from_icon_name("list-remove")
@@ -1641,17 +1734,19 @@ class PluginPage(Gtk.Notebook):
         return fr
 
     def _chg_bt(s, cfg, plg, cn, nt):
-        rk, pk, ak = f"binding_{cn}", f"repeatable_binding_{cn}", f"always_binding_{cn}"
+        if nt not in range(len(BINDING_PREFIXES)):
+            return
+        keys = [prefix + cn for prefix in BINDING_PREFIXES]
         so = cfg.get_section_options(plg.name)
-        bv = so.get(ak) or so.get(pk) or so.get(rk) or "none"
-        for k in (rk, pk, ak):
-            if k in so:
-                cfg.remove_option(plg.name, k)
-        cfg.set_option(plg.name, [rk, pk, ak][nt], bv)
+        bv = next((so[keys[i]] for i in (3, 2, 1, 0) if keys[i] in so), "none")
+        for key in keys:
+            if key in so:
+                cfg.remove_option(plg.name, key)
+        cfg.set_option(plg.name, keys[nt], bv)
         cfg.save()
 
     def _rm_bind(s, cfg, plg, cn, fr, pb):
-        for px in ("command_", "binding_", "repeatable_binding_", "always_binding_"):
+        for px in ("command_",) + BINDING_PREFIXES:
             cfg.remove_option(plg.name, px + cn)
         cfg.save()
         pb.remove(fr)
@@ -1659,7 +1754,7 @@ class PluginPage(Gtk.Notebook):
     def _add_bind(s, cfg, plg, bx):
         so = cfg.get_section_options(plg.name)
         i = 0
-        while f"command_new{i}" in so:
+        while any(f"{prefix}new{i}" in so for prefix in ("command_",) + BINDING_PREFIXES):
             i += 1
         n = f"new{i}"
         cfg.set_option(plg.name, f"command_{n}", "")
@@ -1952,7 +2047,7 @@ def _parse_refresh(text):
         return 0
     try:
         return int(round(float(t) * 1000))
-    except ValueError:
+    except (ValueError, OverflowError):
         return -1
 
 
@@ -1991,7 +2086,7 @@ def _parse_mode(mode):
         try:
             val = float(rate)
             mhz = int(round(val)) if val >= 1000 else int(round(val * 1000))
-        except ValueError:
+        except (ValueError, OverflowError):
             mhz = 0
     return res, mhz, False
 
@@ -2037,6 +2132,7 @@ class _DisplayConfirmDialog(Gtk.Window):
         s._remaining = seconds
         s._timer_id = 0
         s._done = False
+        s.connect("close-request", s._on_close_request)
 
         s.set_title(_("Confirm Display Changes"))
         s.add_css_class("confirm-window")
@@ -2090,6 +2186,12 @@ class _DisplayConfirmDialog(Gtk.Window):
         s._detail_lbl.add_css_class("confirm-detail")
         card.append(s._detail_lbl)
         s._set_detail(detail_lines)
+        s._error_lbl = Gtk.Label()
+        s._error_lbl.set_wrap(True)
+        s._error_lbl.set_xalign(0)
+        s._error_lbl.add_css_class("error")
+        s._error_lbl.set_visible(False)
+        card.append(s._error_lbl)
 
         # buttons
         btns = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
@@ -2112,6 +2214,11 @@ class _DisplayConfirmDialog(Gtk.Window):
         s._start_timer()
 
     # -- public API used by the owner to supersede an in-flight prompt --
+    def _on_close_request(s, *args):
+        s._finish("revert")
+        # _finish destroys the window only after recovery succeeds.
+        return True
+
     def update(s, detail_lines):
         """Refresh the change description and restart the countdown."""
         if s._done:
@@ -2156,21 +2263,27 @@ class _DisplayConfirmDialog(Gtk.Window):
 
     def _finish(s, reason):
         if s._done:
-            return
-        s._done = True
+            return True
         if s._timer_id:
             GLib.source_remove(s._timer_id)
             s._timer_id = 0
         try:
-            s.destroy()
-        except Exception:
-            pass
-        if reason == "keep" and s._on_keep:
-            s._on_keep()
-        elif reason == "revert" and s._on_revert:
-            s._on_revert()
+            if reason == "keep" and s._on_keep:
+                s._on_keep()
+            elif reason == "revert" and s._on_revert:
+                s._on_revert()
+        except OSError as error:
+            s._error_lbl.set_text(_("Could not restore display settings") + ": " + str(error))
+            s._error_lbl.set_visible(True)
+            s._remaining = s._seconds
+            s._count_lbl.set_text(f"{s._remaining}s")
+            s._start_timer()
+            return False
+        s._done = True
+        s.destroy()
         if s._on_finished:
             s._on_finished()
+        return True
 
 
 class DisplayPage(Gtk.ScrolledWindow):
@@ -2197,6 +2310,7 @@ class DisplayPage(Gtk.ScrolledWindow):
         s._active_confirm = None
         #: pending debounce timer ids for the confirm prompt (cancelled on reload)
         s._confirm_sources = set()
+        s._pending_reverts = {}
         s._root = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
         s._root.set_margin_start(14)
         s._root.set_margin_end(14)
@@ -2230,22 +2344,16 @@ class DisplayPage(Gtk.ScrolledWindow):
 
     def _refresh_outputs(s):
         # Keep the existing rollback alive until the user confirms or times out.
-        if s._active_confirm is not None or s._confirm_sources:
+        if s._active_confirm is not None or s._confirm_sources or s._pending_reverts:
             return True
         s._hotplug_source = 0
         s.reload()
         return False
 
     def reload(s, *_):
-        # Rebuilding the cards invalidates the widgets a pending confirm
-        # prompt would revert into, so close it first (without reverting) and
-        # cancel any debounce timers still pointing at the old cards.
-        if s._active_confirm is not None:
-            s._active_confirm.close_silent()
-            s._active_confirm = None
-        for sid in list(s._confirm_sources):
-            GLib.source_remove(sid)
-        s._confirm_sources.clear()
+        if s._active_confirm is not None or s._confirm_sources or s._pending_reverts:
+            return
+        # Rebuild only after confirmation has finished, preserving rollback.
         child = s._root.get_first_child()
         while child:
             nxt = child.get_next_sibling()
@@ -2301,6 +2409,17 @@ class DisplayPage(Gtk.ScrolledWindow):
                               is_connected=(oi["name"] in det_names)))
 
         s._root.append(s._build_add_row(cfg))
+
+    def revert_pending_changes(s):
+        for sid in list(s._confirm_sources):
+            GLib.source_remove(sid)
+        s._confirm_sources.clear()
+        if s._active_confirm is not None:
+            if s._active_confirm._finish("revert") is False:
+                raise OSError(_("Display settings have not been restored. Retry before closing."))
+        for revert in list(s._pending_reverts.values()):
+            revert()
+        s._pending_reverts.clear()
 
     def _window_output_name(s):
         """Return the connector name of the output the WCM window is on.
@@ -2395,11 +2514,14 @@ class DisplayPage(Gtk.ScrolledWindow):
         )
 
         res_combo = Gtk.ComboBoxText.new_with_entry()
+        res_combo.append("default", _("Automatic"))
         for r in res_list:
             res_combo.append_text(r)
         if res0 and res0 not in res_list:
             res_combo.append_text(res0)
         res_combo.get_child().set_text(res0 or "")
+        if not res0 and enabled0 and not (cfg_mode or "").startswith("mirror"):
+            res_combo.set_active_id("default")
 
         ref_combo = Gtk.ComboBoxText.new_with_entry()
 
@@ -2418,7 +2540,9 @@ class DisplayPage(Gtk.ScrolledWindow):
         scale_val = cfg.get_option(sec, "scale")
         try:
             scale_val = float(scale_val) if scale_val else float(oi.get("scale") or 1.0)
-        except ValueError:
+        except (ValueError, OverflowError):
+            scale_val = 1.0
+        if not math.isfinite(scale_val):
             scale_val = 1.0
         scale_spin = Gtk.SpinButton(
             adjustment=Gtk.Adjustment(value=scale_val, lower=0.25, upper=8.0,
@@ -2431,8 +2555,8 @@ class DisplayPage(Gtk.ScrolledWindow):
         if cfg_pos and "," in cfg_pos:
             try:
                 px, py = (int(float(v)) for v in cfg_pos.split(",")[:2])
-            except ValueError:
-                pass
+            except (ValueError, OverflowError):
+                px, py = 0, 0
         elif oi.get("position"):
             px, py = oi["position"]
         posx_spin = Gtk.SpinButton(
@@ -2471,12 +2595,16 @@ class DisplayPage(Gtk.ScrolledWindow):
             "res": res0 or "",
             "ref": _fmt_refresh(refresh0),
             "tr": cur_tr,
+            "saved_mode": cfg_mode,
+            "saved_transform": cfg.get_option(sec, "transform"),
             "suppress": False,    # don't prompt for enable/disable toggles
             "reverting": False,   # guard against re-entrancy while reverting
             "debounce_id": 0,     # coalesce rapid edits / typing
         }
 
         def _cur_res():
+            if res_combo.get_active_id() == "default":
+                return ""
             return (res_combo.get_active_text()
                     or res_combo.get_child().get_text() or "").strip()
 
@@ -2490,7 +2618,8 @@ class DisplayPage(Gtk.ScrolledWindow):
         def _confirm_detail():
             lines = []
             if sw.get_active() and (
-                    (_cur_res(), _cur_ref()) != (confirm["res"], confirm["ref"])):
+                    (_cur_res(), _cur_ref()) != (confirm["res"], confirm["ref"])
+                    or cfg.get_option(sec, "mode") != confirm["saved_mode"]):
                 lines.append(_("{name}: Mode → {mode}").format(
                     name=name, mode=_mode_human(_cur_res(), _cur_ref())))
             if _cur_tr() != (confirm["tr"] or "normal"):
@@ -2499,32 +2628,77 @@ class DisplayPage(Gtk.ScrolledWindow):
             return lines
 
         def _confirm_keep():
+            # Entries may contain rejected or incomplete typing. Keep only
+            # values that were actually saved and restore their controls.
+            restore_controls("mode")
+            restore_controls("transform")
+            getattr(s, "_pending_reverts", {}).pop(sec, None)
             confirm["res"], confirm["ref"] = _cur_res(), _cur_ref()
             confirm["tr"] = _cur_tr()
+            confirm["saved_mode"] = cfg.get_option(sec, "mode")
+            confirm["saved_transform"] = cfg.get_option(sec, "transform")
 
         def _confirm_revert():
+            sid = confirm["debounce_id"]
+            if sid in s._confirm_sources:
+                GLib.source_remove(sid)
+                s._confirm_sources.discard(sid)
+            confirm["debounce_id"] = 0
             confirm["reverting"] = True
             try:
+                # A failed save must leave both the visible state and queued
+                # operations unchanged so Keep and Retry remain meaningful.
+                previous = copy.deepcopy((cfg.entries, cfg._operations, cfg._disk_text))
+                committed_warning = None
+                try:
+                    for key, value in (("mode", confirm["saved_mode"]),
+                                       ("transform", confirm["saved_transform"])):
+                        if key == "mode" and not sw.get_active():
+                            continue
+                        if value is None:
+                            cfg.remove_option(sec, key)
+                        else:
+                            cfg.set_option(sec, key, value)
+                    cfg.save()
+                except SaveCommittedError as error:
+                    committed_warning = str(error)
+                except OSError:
+                    cfg.entries, cfg._operations, cfg._disk_text = previous
+                    cfg._rebuild_index()
+                    raise
                 st["block"] = True
                 try:
-                    res_combo.get_child().set_text(confirm["res"])
+                    if confirm["saved_mode"] == "default":
+                        res_combo.set_active_id("default")
+                    else:
+                        res_combo.set_active(-1)
+                        res_combo.get_child().set_text(confirm["res"])
                     populate_refresh(confirm["res"], confirm["ref"])
                     tr_txt = confirm["tr"] or "normal"
                     if tr_txt in tr_values:
                         tr_combo.set_active(tr_values.index(tr_txt))
                 finally:
                     st["block"] = False
-                # Restore the config too, so wayfire re-applies the old mode live.
-                if sw.get_active():
-                    rf = _parse_refresh(confirm["ref"])
-                    cfg.set_option(sec, "mode",
-                                   _build_mode(confirm["res"], rf if rf > 0 else 0))
-                cfg.set_option(sec, "transform", confirm["tr"] or "normal")
-                cfg.save()
-                _set_warn("ok", "")
+                remember_controls("mode")
+                remember_controls("transform")
+                getattr(s, "_pending_reverts", {}).pop(sec, None)
+                _set_warn("error" if committed_warning else "ok", committed_warning or "")
             finally:
                 # Always clear the guard, or the prompt would only ever fire once.
                 confirm["reverting"] = False
+
+        def _cancel_confirm():
+            sid = confirm["debounce_id"]
+            if sid in s._confirm_sources:
+                GLib.source_remove(sid)
+                s._confirm_sources.discard(sid)
+            confirm["debounce_id"] = 0
+            getattr(s, "_pending_reverts", {}).pop(sec, None)
+            active = s._active_confirm
+            if active is not None and getattr(active, "owner", None) == sec:
+                active.close_silent()
+
+        _confirm_revert.cancel = _cancel_confirm
 
         def _show_confirm():
             s._confirm_sources.discard(confirm["debounce_id"])
@@ -2532,6 +2706,7 @@ class DisplayPage(Gtk.ScrolledWindow):
             lines = _confirm_detail()
             active = s._active_confirm
             if not lines:
+                getattr(s, "_pending_reverts", {}).pop(sec, None)
                 # Returned to the baseline before the prompt mattered.
                 if active is not None and getattr(active, "owner", None) == sec:
                     active.close_silent()
@@ -2540,7 +2715,10 @@ class DisplayPage(Gtk.ScrolledWindow):
                 active.update(lines)
                 return False
             if active is not None:
-                active.close_silent()
+                if active._finish("revert") is False:
+                    confirm["debounce_id"] = GLib.timeout_add(600, _show_confirm)
+                    s._confirm_sources.add(confirm["debounce_id"])
+                    return False
 
             def _finished():
                 if getattr(s._active_confirm, "owner", None) == sec:
@@ -2565,26 +2743,87 @@ class DisplayPage(Gtk.ScrolledWindow):
             if confirm["debounce_id"]:
                 GLib.source_remove(confirm["debounce_id"])
                 s._confirm_sources.discard(confirm["debounce_id"])
+            if hasattr(s, "_pending_reverts"):
+                s._pending_reverts[sec] = _confirm_revert
             confirm["debounce_id"] = GLib.timeout_add(600, _show_confirm)
             s._confirm_sources.add(confirm["debounce_id"])
+
+        committed_controls = {
+            "mode": (res_combo.get_active_id(), res_combo.get_child().get_text(),
+                     ref_combo.get_child().get_text(), enabled0),
+            "transform": tr_combo.get_active(),
+            "scale": scale_spin.get_value(),
+            "position": (posx_spin.get_value(), posy_spin.get_value()),
+        }
+
+        def remember_controls(key):
+            if key == "mode":
+                committed_controls[key] = (res_combo.get_active_id(), res_combo.get_child().get_text(),
+                                           ref_combo.get_child().get_text(), sw.get_active())
+            elif key == "transform":
+                committed_controls[key] = tr_combo.get_active()
+            elif key == "scale":
+                committed_controls[key] = scale_spin.get_value()
+            else:
+                committed_controls[key] = (posx_spin.get_value(), posy_spin.get_value())
+
+        def restore_controls(key):
+            st["block"] = True
+            try:
+                value = committed_controls[key]
+                if key == "mode":
+                    active, res, ref, enabled = value
+                    if active:
+                        res_combo.set_active_id(active)
+                    else:
+                        res_combo.set_active(-1)
+                        res_combo.get_child().set_text(res)
+                    populate_refresh(res, ref)
+                    sw.set_active(enabled)
+                    for ctl in (res_combo, ref_combo, scale_spin, posx_spin, posy_spin, tr_combo):
+                        ctl.set_sensitive(enabled)
+                elif key == "transform":
+                    tr_combo.set_active(value)
+                elif key == "scale":
+                    scale_spin.set_value(value)
+                else:
+                    posx_spin.set_value(value[0]); posy_spin.set_value(value[1])
+            finally:
+                st["block"] = False
+
+        def save_display_option(key, value):
+            previous = copy.deepcopy((cfg.entries, cfg._operations, cfg._disk_text))
+            try:
+                cfg.set_option(sec, key, value)
+                cfg.save()
+            except SaveCommittedError as error:
+                remember_controls(key)
+                _set_warn("error", str(error))
+                return True
+            except OSError as error:
+                cfg.entries, cfg._operations, cfg._disk_text = previous
+                cfg._rebuild_index()
+                restore_controls(key)
+                _set_warn("error", str(error))
+                return False
+            remember_controls(key)
+            return True
 
         def write_mode(*_):
             if st["block"]:
                 return
             if not sw.get_active():
                 _set_warn("ok", "")
-                cfg.set_option(sec, "mode", "off")
-                cfg.save()
-                return
-            res = (res_combo.get_active_text()
-                   or res_combo.get_child().get_text() or "").strip()
-            if res == "":
+                return save_display_option("mode", "off")
+            automatic = res_combo.get_active_id() == "default"
+            res = _cur_res()
+            if res == "" and not automatic:
                 # Mid-edit / incomplete: don't touch the saved mode.
                 _set_warn("ok", "")
                 return
             ref_text = (ref_combo.get_active_text()
                         or ref_combo.get_child().get_text() or "").strip()
-            if ref_text == "":
+            if automatic or ref_text == "":
                 rf = 0
             else:
                 rf = _parse_refresh(ref_text)
@@ -2596,43 +2835,63 @@ class DisplayPage(Gtk.ScrolledWindow):
             if level == "error":
                 # Never hand wayfire a malformed/unsupported mode.
                 return
-            cfg.set_option(sec, "mode", _build_mode(res, rf if rf > 0 else 0))
-            cfg.save()
-            maybe_confirm()
+            if save_display_option("mode", "default" if automatic else
+                                   _build_mode(res, rf if rf > 0 else 0)):
+                maybe_confirm()
+                return True
+            return False
 
         def write_scale(*_):
             if st["block"]:
                 return
-            cfg.set_option(sec, "scale", f"{scale_spin.get_value():.6f}")
-            cfg.save()
+            save_display_option("scale", f"{scale_spin.get_value():.6f}")
 
         def write_position(*_):
             if st["block"]:
                 return
-            cfg.set_option(
-                sec, "position",
+            save_display_option(
+                "position",
                 f"{posx_spin.get_value_as_int()},{posy_spin.get_value_as_int()}")
-            cfg.save()
 
         def write_transform(*_):
             if st["block"]:
                 return
-            cfg.set_option(sec, "transform", tr_combo.get_active_text() or "normal")
-            cfg.save()
-            maybe_confirm()
+            if save_display_option("transform", tr_combo.get_active_text() or "normal"):
+                maybe_confirm()
 
         def on_res_changed(_w):
             if st["block"]:
                 return
             r = res_combo.get_active_text() or res_combo.get_child().get_text()
             r = (r or "").strip()
-            if r in ref_by_res:
+            if res_combo.get_active_id() == "default":
+                st["block"] = True
+                populate_refresh("", "")
+                st["block"] = False
+            elif r in ref_by_res:
                 st["block"] = True
                 populate_refresh(r, ref_combo.get_active_text() or "")
                 st["block"] = False
             write_mode()
 
+        def commit_resolution(*_):
+            # An empty field during typing is not a mode change. Enter or
+            # leaving the field commits it as an explicit automatic choice.
+            if not st["block"] and not res_combo.get_child().get_text().strip():
+                res_combo.set_active_id("default")
+
         def on_toggle(_w, _p):
+            if st["block"]:
+                return
+            if not sw.get_active():
+                # Preserve a usable mode for the next enable. Rejected or
+                # incomplete entry text must not become the off-state mode.
+                restore_controls("mode")
+                st["block"] = True
+                try:
+                    sw.set_active(False)
+                finally:
+                    st["block"] = False
             for ctl in (res_combo, ref_combo, scale_spin, posx_spin,
                         posy_spin, tr_combo):
                 ctl.set_sensitive(sw.get_active())
@@ -2640,7 +2899,19 @@ class DisplayPage(Gtk.ScrolledWindow):
             # change, so it shouldn't raise the confirm prompt.
             confirm["suppress"] = True
             try:
-                write_mode()
+                if sw.get_active() and not _cur_res():
+                    res_combo.set_active_id("default")
+                if not write_mode():
+                    restore_controls("mode")
+                    return
+                # On/off is committed immediately. Future rotation rollback
+                # must restore this new mode, not the pre-toggle off state.
+                expected = "off" if not sw.get_active() else (
+                    "default" if res_combo.get_active_id() == "default" else
+                    _build_mode(_cur_res(), max(0, _parse_refresh(_cur_ref()))))
+                if cfg.get_option(sec, "mode") == expected:
+                    confirm["saved_mode"] = expected
+                    confirm["res"], confirm["ref"] = _cur_res(), _cur_ref()
             finally:
                 confirm["suppress"] = False
 
@@ -2689,6 +2960,10 @@ class DisplayPage(Gtk.ScrolledWindow):
         # connect after initial values are set, then unblock
         sw.connect("notify::active", on_toggle)
         res_combo.connect("changed", on_res_changed)
+        res_combo.get_child().connect("activate", commit_resolution)
+        resolution_focus = Gtk.EventControllerFocus()
+        resolution_focus.connect("leave", commit_resolution)
+        res_combo.get_child().add_controller(resolution_focus)
         ref_combo.connect("changed", write_mode)
         scale_spin.connect("value-changed", write_scale)
         posx_spin.connect("value-changed", write_position)
@@ -2717,9 +2992,25 @@ class DisplayPage(Gtk.ScrolledWindow):
             except GLib.Error:
                 return  # dismissed
             if idx == 1:
-                s.app.config.remove_section(OutputManager.section_name(name))
-                s.app.config.save()
+                cfg = s.app.config
+                previous = copy.deepcopy((cfg.entries, cfg._operations, cfg._disk_text))
+                committed_warning = None
+                try:
+                    cfg.remove_section(OutputManager.section_name(name))
+                    cfg.save()
+                except SaveCommittedError as error:
+                    committed_warning = error
+                except OSError as error:
+                    cfg.entries, cfg._operations, cfg._disk_text = previous
+                    cfg._rebuild_index()
+                    _operation_error(s.app, _("Could not remove output"), error)
+                    return
+                pending = getattr(s, "_pending_reverts", {}).get(OutputManager.section_name(name))
+                if pending is not None:
+                    pending.cancel()
                 s.reload()
+                if committed_warning is not None:
+                    _operation_error(s.app, _("Output removed; recovery needs attention"), committed_warning)
 
         dlg.choose(s.app, None, on_resp)
 
@@ -2739,14 +3030,29 @@ class DisplayPage(Gtk.ScrolledWindow):
         btn.add_css_class("add-btn")
         row.append(btn)
 
-        def do_add(*_):
+        def do_add(*args):
             nm = ent.get_text().strip()
             if not nm:
                 return
+            if any(char in nm for char in "[]\r\n"):
+                _operation_error(s.app, _("Could not add output"),
+                                 _("Output names cannot contain brackets or line breaks."))
+                return
             sec = OutputManager.section_name(nm)
             if cfg.get_option(sec, "mode") is None:
-                cfg.set_option(sec, "mode", "default")
-                cfg.save()
+                previous = copy.deepcopy((cfg.entries, cfg._operations, cfg._disk_text))
+                try:
+                    cfg.set_option(sec, "mode", "default")
+                    cfg.save()
+                except SaveCommittedError as error:
+                    s.reload()
+                    _operation_error(s.app, _("Output added; recovery needs attention"), error)
+                    return
+                except OSError as error:
+                    cfg.entries, cfg._operations, cfg._disk_text = previous
+                    cfg._rebuild_index()
+                    _operation_error(s.app, _("Could not add output"), error)
+                    return
             s.reload()
 
         btn.connect("clicked", do_add)
@@ -3312,6 +3618,7 @@ class WCM(Gtk.ApplicationWindow):
                 s.set_icon_name("wcm")
             except:
                 pass
+        s.connect("close-request", s._before_close)
         s.config = WayfireConfigFile(get_config_path(config_path))
         s.wf_shell_config = WayfireConfigFile(get_wfshell_config_path(config_path))
         s.preset_mgr = PresetManager()
@@ -3338,6 +3645,17 @@ class WCM(Gtk.ApplicationWindow):
         kc = Gtk.EventControllerKey()
         kc.connect("key-pressed", s._on_key)
         s.add_controller(kc)
+
+    def _before_close(s, *args):
+        try:
+            s.config.flush_pending_edits()
+            s.wf_shell_config.flush_pending_edits()
+            if s.display_page is not None:
+                s.display_page.revert_pending_changes()
+        except OSError as error:
+            _operation_error(s, _("Could not save changes. Window kept open."), error)
+            return True
+        return False
 
     def _gen_from_config(s):
         for sec in s.config.get_sections():
@@ -3636,6 +3954,7 @@ class WCM(Gtk.ApplicationWindow):
         ppb.add_css_class("preset-btn-box")
         ppb.set_margin_top(4)
         plb = Gtk.Button(label=_("Load"))
+        plb.set_tooltip_text(_("Merge saved settings. Extra commands and settings are kept."))
         plb.add_css_class("preset-load")
         plb.connect("clicked", s._on_plugin_load)
         ppb.append(plb)
@@ -3704,6 +4023,12 @@ class WCM(Gtk.ApplicationWindow):
         dsp.set_vexpand(True)
         dlp.append(dsp)
         drb = s._make_button(_("Detect Outputs"), "view-refresh")
+        drb.set_tooltip_text(_(
+            'Refresh connected displays and their available resolutions and refresh rates '
+            'using wlr-randr. Saved displays remain listed when disconnected. '
+            'Also updates which display is protected from being disabled, based on '
+            'the display containing this window. This does not change display settings.'
+        ))
         drb.add_css_class("action-btn")
         drb.add_css_class("back-btn")
         drb.set_margin_start(14)
@@ -3966,16 +4291,8 @@ class WCM(Gtk.ApplicationWindow):
                 continue
 
     def _wiki_url_for(s, plg):
-        """Build a Wayfire wiki URL for a plugin (best-effort anchor)."""
-        if plg is None:
-            return "https://github.com/WayfireWM/wayfire/wiki/Configuration"
-        if plg.type == PluginType.WF_SHELL:
-            # wf-shell (panel/dock/background) lives in its own repo.
-            return "https://github.com/WayfireWM/wf-shell"
-        base = "https://github.com/WayfireWM/wayfire/wiki/Configuration"
-        slug = (plg.disp_name or plg.name or "").strip().lower()
-        slug = re.sub(r"[^a-z0-9 -]", "", slug).replace(" ", "-")
-        return f"{base}#{slug}" if slug else base
+        """Return the documentation for the plugin's repository and identifier."""
+        return plugin_wiki_url(plg)
 
     def _open_wiki(s, *_):
         url = s._wiki_url_for(s.current_plugin)
@@ -4059,6 +4376,8 @@ class WCM(Gtk.ApplicationWindow):
         s.main_page.set_filter(entry.get_text())
 
     def open_page(s, plg=None):
+        s.config.flush_pending_edits()
+        s.wf_shell_config.flush_pending_edits()
         if plg:
             if plg.name == "animate":
                 # Read the saved list on every visit, including external edits.
@@ -4103,6 +4422,7 @@ class WCM(Gtk.ApplicationWindow):
     def open_display(s, btn=None):
         s.current_plugin = None
         if s.display_page is not None:
+            s.display_page.revert_pending_changes()
             try:
                 s.main_stack.remove(s.display_page)
             except Exception:
@@ -4199,8 +4519,14 @@ class WCM(Gtk.ApplicationWindow):
                 # entire file preserves the multi-line `plugins = \ ...`
                 # list and all formatting, so loading the preset later can
                 # never blank out the enabled-plugins list.
-                s.preset_mgr.save_master_preset_file(
-                    name, s.config.path, s.wf_shell_config.path)
+                s.config.flush_pending_edits()
+                s.wf_shell_config.flush_pending_edits()
+                committed_warning = None
+                try:
+                    s.preset_mgr.save_master_preset_file(
+                        name, s.config.path, s.wf_shell_config.path)
+                except SaveCommittedError as error:
+                    committed_warning = error
                 s._refresh_master_presets()
                 # Select the one just saved (stored under its sanitized name)
                 saved = s.preset_mgr._sanitize(name)
@@ -4213,8 +4539,10 @@ class WCM(Gtk.ApplicationWindow):
                         break
                     it = model.iter_next(it)
                     i += 1
+                if committed_warning is not None:
+                    _operation_error(s, _("Preset saved; recovery needs attention"), committed_warning)
             except Exception as e:
-                print(f"WCM: Failed to save master preset: {e}")
+                _preset_error(s, e)
         s._prompt_name(_("Save Master Preset"), do)
 
     def _on_master_load(s, btn):
@@ -4222,12 +4550,28 @@ class WCM(Gtk.ApplicationWindow):
         if not name:
             return
         try:
+            if s.display_page is not None:
+                s.display_page.revert_pending_changes()
             # Copy the stored snapshot back over the live config file(s)
             # verbatim, then reload the in-memory config from disk.
-            s.preset_mgr.load_master_preset_file(
-                name, s.config.path, s.wf_shell_config.path)
+            committed_warning = None
+            try:
+                s.preset_mgr.load_master_preset_file(
+                    name, s.config.path, s.wf_shell_config.path)
+            except SaveCommittedError as error:
+                committed_warning = error
+            # Synchronous loading cannot dispatch GTK timers. Cancel only
+            # after success so failed loads leave pending typing intact.
+            s.config.cancel_pending_edits()
+            s.wf_shell_config.cancel_pending_edits()
             s.config = WayfireConfigFile(s.config.path)
             s.wf_shell_config = WayfireConfigFile(s.wf_shell_config.path)
+            s.config.add_save_listener(lambda c: s.ini_panel.show(c))
+            s.wf_shell_config.add_save_listener(lambda c: s.ini_panel.show(c))
+            s.ini_panel.show(s.config)
+
+            if s.display_page is not None:
+                s.display_page.reload()
 
             # Refresh enabled states
             enabled = s.config.get_enabled_plugins()
@@ -4245,15 +4589,26 @@ class WCM(Gtk.ApplicationWindow):
             # Refresh plugin page if open
             if s.current_plugin:
                 s.open_page(s.current_plugin)
+            if committed_warning is not None:
+                _operation_error(s, _("Preset loaded; recovery needs attention"), committed_warning)
         except Exception as e:
-            print(f"WCM: Failed to load master preset: {e}")
+            _preset_error(s, e)
 
     def _on_master_delete(s, btn):
         name = s._master_combo.get_active_text()
         if not name:
             return
-        s.preset_mgr.delete_master_preset(name)
-        s._refresh_master_presets()
+        try:
+            committed_warning = None
+            try:
+                s.preset_mgr.delete_master_preset(name)
+            except SaveCommittedError as error:
+                committed_warning = error
+            s._refresh_master_presets()
+            if committed_warning is not None:
+                _operation_error(s, _("Preset deleted; recovery needs attention"), committed_warning)
+        except Exception as e:
+            _preset_error(s, e)
 
     # --- Plugin preset actions ---
 
@@ -4264,19 +4619,22 @@ class WCM(Gtk.ApplicationWindow):
 
         def do(name):
             try:
-                s.preset_mgr.save_plugin_preset(name, plg.name, s._cfg_for(plg))
+                s._cfg_for(plg).flush_pending_edits()
+                s.preset_mgr.save_plugin_preset(
+                    name, plg.name, s._cfg_for(plg), manage_enabled=plg.type != PluginType.WF_SHELL)
                 s._refresh_plugin_presets()
+                saved = s.preset_mgr._sanitize(name)
                 model = s._plugin_combo.get_model()
                 it = model.get_iter_first()
                 i = 0
                 while it:
-                    if model.get_value(it, 0) == name:
+                    if model.get_value(it, 0) == saved:
                         s._plugin_combo.set_active(i)
                         break
                     it = model.iter_next(it)
                     i += 1
             except Exception as e:
-                print(f"WCM: Failed to save plugin preset: {e}")
+                _preset_error(s, e)
         s._prompt_name(f"Save {plg.disp_name or plg.name} Preset", do)
 
     def _on_plugin_load(s, btn):
@@ -4286,8 +4644,13 @@ class WCM(Gtk.ApplicationWindow):
         if not name:
             return
         try:
-            s.preset_mgr.load_plugin_preset(
-                name, s.current_plugin.name, s._cfg_for(s.current_plugin))
+            committed_warning = None
+            try:
+                s.preset_mgr.load_plugin_preset(
+                    name, s.current_plugin.name, s._cfg_for(s.current_plugin),
+                    manage_enabled=s.current_plugin.type != PluginType.WF_SHELL)
+            except SaveCommittedError as error:
+                committed_warning = error
             # Refresh enabled state
             enabled = s.config.get_enabled_plugins()
             plg = s.current_plugin
@@ -4308,8 +4671,10 @@ class WCM(Gtk.ApplicationWindow):
             s.ec.handler_unblock_by_func(s._on_pe)
             # Re-create the plugin page to reflect new values
             s.open_page(plg)
+            if committed_warning is not None:
+                _operation_error(s, _("Preset loaded; recovery needs attention"), committed_warning)
         except Exception as e:
-            print(f"WCM: Failed to load plugin preset: {e}")
+            _preset_error(s, e)
 
     def _on_plugin_delete(s, btn):
         if not s.current_plugin:
@@ -4317,8 +4682,11 @@ class WCM(Gtk.ApplicationWindow):
         name = s._plugin_combo.get_active_text()
         if not name:
             return
-        s.preset_mgr.delete_plugin_preset(name, s.current_plugin.name)
-        s._refresh_plugin_presets()
+        try:
+            s.preset_mgr.delete_plugin_preset(name, s.current_plugin.name)
+            s._refresh_plugin_presets()
+        except Exception as e:
+            _preset_error(s, e)
 
     def _launch_wd(s, btn):
         try:

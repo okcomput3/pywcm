@@ -1,0 +1,579 @@
+#, fuzzy
+msgid ""
+msgstr ""
+"Project-Id-Version: PACKAGE VERSION\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-10-04 15:15+0100\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: \n"
+"Language-Team: \n"
+"Language: zh_CN\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+
+#: wcm.py:618
+msgid "Waiting for Binding"
+msgstr "正在等待绑定"
+
+#: wcm.py:632
+msgid ""
+"Press a key combination…\n"
+"(Escape to cancel)"
+msgstr ""
+
+#: wcm.py:686
+#, fuzzy
+msgid "(No modifiers)"
+msgstr "（未按下修饰符）"
+
+#: wcm.py:697
+msgid "Press a key combination…"
+msgstr ""
+
+#: wcm.py:842 wcm.py:1412 wcm.py:1433
+msgid "General"
+msgstr "常规"
+
+#: wcm.py:842
+msgid "Accessibility"
+msgstr "辅助功能"
+
+#: wcm.py:842
+msgid "Desktop"
+msgstr "桌面"
+
+#: wcm.py:842
+msgid "Shell"
+msgstr "Shell"
+
+#: wcm.py:843
+msgid "Effects"
+msgstr "效果"
+
+#: wcm.py:843
+msgid "Window Management"
+msgstr "窗口管理"
+
+#: wcm.py:843
+msgid "Utility"
+msgstr "实用工具"
+
+#: wcm.py:843
+msgid "Other"
+msgstr "其他"
+
+#: wcm.py:844
+msgid "Uncategorized"
+msgstr "未分类"
+
+#: wcm.py:916
+msgid "Preset operation failed"
+msgstr ""
+
+#: wcm.py:944
+msgid ""
+"Window matching examples:\n"
+"all — every window; none — no windows\n"
+"type is \"toplevel\" — normal application windows\n"
+"app_id is \"foot\" — match an application\n"
+"title contains \"Terminal\" — match a window title\n"
+"Combine conditions with &, | and !, using parentheses."
+msgstr ""
+
+#: wcm.py:1032
+msgid "Reset to default"
+msgstr "重置为默认值"
+
+#: wcm.py:1216
+#, python-brace-format
+msgid "Reset to default: {default}"
+msgstr "恢复默认值：{default}"
+
+#: wcm.py:1220
+msgid "Already at default"
+msgstr "已是默认值"
+
+#: wcm.py:1285
+#, fuzzy
+msgid "Select Directory"
+msgstr "选择目录"
+
+#: wcm.py:1294
+msgid "Select File"
+msgstr "选择文件"
+
+#: wcm.py:1352
+msgid "Options"
+msgstr ""
+
+#: wcm.py:1428
+msgid "Rules"
+msgstr ""
+
+#: wcm.py:1437
+msgid ""
+"This page has no editable options. See the plugin documentation for usage."
+msgstr ""
+
+#: wcm.py:1441
+msgid "Plugin documentation"
+msgstr "插件文档"
+
+#: wcm.py:1653 wcm.py:1716
+#, python-brace-format
+msgid "Command {name}: {command}"
+msgstr "命令 {name}：{command}"
+
+#: wcm.py:1671
+msgid "Type"
+msgstr "类型"
+
+#: wcm.py:1677
+msgid "Regular"
+msgstr "常规"
+
+#: wcm.py:1678
+msgid "Repeat"
+msgstr "重复"
+
+#: wcm.py:1679
+msgid "Always"
+msgstr "总是"
+
+#: wcm.py:1680
+msgid "Release"
+msgstr "松开时"
+
+#: wcm.py:1687
+msgid "Binding"
+msgstr "绑定"
+
+#: wcm.py:1705
+msgid "Command"
+msgstr "命令"
+
+#: wcm.py:1787
+msgid "Choose Executable"
+msgstr "选择可执行文件"
+
+#: wcm.py:1906
+msgid "CORE"
+msgstr ""
+
+#: wcm.py:1911
+msgid "SHELL"
+msgstr ""
+
+#: wcm.py:1916
+msgid "ON"
+msgstr ""
+
+#: wcm.py:1921
+msgid "OFF"
+msgstr ""
+
+#: wcm.py:2101
+msgid "auto"
+msgstr ""
+
+#: wcm.py:2130 wcm.py:2149
+msgid "Confirm Display Changes"
+msgstr "确认显示更改"
+
+#: wcm.py:2157 wcm.py:2187
+msgid "Revert"
+msgstr "还原"
+
+#: wcm.py:2189
+msgid "Keep Changes"
+msgstr "保留更改"
+
+#: wcm.py:2439
+msgid "main display (running WCM)"
+msgstr ""
+
+#: wcm.py:2448
+msgid "Enabled"
+msgstr "已启用"
+
+#: wcm.py:2460
+msgid ""
+"WCM is running on this display, so it can't be removed — that would blank "
+"your screen. Move WCM to another display to manage this one."
+msgstr ""
+
+#: wcm.py:2464
+msgid "Remove this output (delete its config section)"
+msgstr ""
+
+#: wcm.py:2492
+msgid "Automatic"
+msgstr "自动"
+
+#: wcm.py:2598
+#, python-brace-format
+msgid "{name}: Mode → {mode}"
+msgstr ""
+
+#: wcm.py:2601
+#, python-brace-format
+msgid "{name}: Rotation → {rotation}"
+msgstr ""
+
+#: wcm.py:2788
+msgid "Resolution"
+msgstr "分辨率"
+
+#: wcm.py:2789
+msgid "Refresh rate"
+msgstr "刷新率"
+
+#: wcm.py:2790
+msgid "Scale"
+msgstr "缩放"
+
+#: wcm.py:2796
+msgid "Position"
+msgstr "位置"
+
+#: wcm.py:2797
+msgid "Rotation"
+msgstr "旋转"
+
+#: wcm.py:2813
+msgid ""
+"WCM is running on this display, so it can't be switched off — that would "
+"blank your screen. Move WCM to another display to turn this one off."
+msgstr ""
+
+#: wcm.py:2837
+#, python-brace-format
+msgid "Remove output “{name}”?"
+msgstr ""
+
+#: wcm.py:2839
+#, python-brace-format
+msgid ""
+"This deletes its [output:{name}] section from wayfire.ini. If the monitor is "
+"still connected it will reappear unconfigured."
+msgstr ""
+
+#: wcm.py:2842 wcm.py:4318
+msgid "Cancel"
+msgstr "取消"
+
+#: wcm.py:2842
+msgid "Remove"
+msgstr ""
+
+#: wcm.py:2861
+msgid "Add output"
+msgstr ""
+
+#: wcm.py:2867
+msgid "name from wlr-randr, e.g. HDMI-A-1"
+msgstr ""
+
+#: wcm.py:2948
+msgid "LIVE"
+msgstr ""
+
+#: wcm.py:3164
+#, fuzzy
+msgid "Close Help"
+msgstr "关闭"
+
+#: wcm.py:3166
+msgid "Back to the WCM"
+msgstr ""
+
+#: wcm.py:3173 wcm.py:3806 wcm.py:3862
+msgid "Back"
+msgstr "返回"
+
+#: wcm.py:3179
+msgid "Forward"
+msgstr ""
+
+#: wcm.py:3186 wcm.py:3319
+msgid "Wayfire Wiki"
+msgstr ""
+
+#: wcm.py:3195
+msgid "Reload"
+msgstr ""
+
+#: wcm.py:3201
+msgid "Open in external browser"
+msgstr ""
+
+#: wcm.py:3238
+msgid ""
+"<b>In-app wiki needs WebKitGTK</b>\n"
+"\n"
+"Install the GTK4 build (e.g. <tt>webkit2gtk-6.0</tt> / <tt>webkitgtk-6.0</"
+"tt>) to read wiki pages right here. For now you can open the page in your "
+"browser."
+msgstr ""
+
+#: wcm.py:3249 wcm.py:3292
+msgid "Open in browser"
+msgstr ""
+
+#: wcm.py:3275
+msgid "<b>This page couldn't be loaded in-app</b>"
+msgstr ""
+
+#: wcm.py:3282
+msgid ""
+"WebKit couldn't render the page (this is usually a WebKitGTK or Wayland "
+"issue, not the wiki). You can open it in your browser."
+msgstr ""
+
+#: wcm.py:3288
+msgid "Retry"
+msgstr ""
+
+#: wcm.py:3305
+msgid ""
+"WebKit couldn't render the page (usually a WebKitGTK or Wayland issue, not "
+"the wiki)."
+msgstr ""
+
+#: wcm.py:3414
+msgid "Couldn't load page"
+msgstr ""
+
+#: wcm.py:3428
+msgid "Couldn't render the page"
+msgstr ""
+
+#: wcm.py:3429
+msgid "The WebKit process stopped unexpectedly."
+msgstr ""
+
+#: wcm.py:3435 wcm.py:4516
+msgid "Wayfire Config Manager"
+msgstr "Wayfire 配置管理器"
+
+#: wcm.py:3489
+#, python-brace-format
+msgid "Configuration for {section}"
+msgstr ""
+
+#: wcm.py:3535 wcm.py:4084
+msgid "Hide side panel"
+msgstr ""
+
+#: wcm.py:3535 wcm.py:4084
+msgid "Show side panel"
+msgstr ""
+
+#: wcm.py:3655
+msgid "Filter"
+msgstr "筛选"
+
+#: wcm.py:3662
+msgid "Search plugins…"
+msgstr ""
+
+#: wcm.py:3672
+msgid "PRESETS"
+msgstr ""
+
+#: wcm.py:3684 wcm.py:3778
+msgid "Load"
+msgstr "加载"
+
+#: wcm.py:3688 wcm.py:3783 wcm.py:4316
+msgid "Save"
+msgstr "保存"
+
+#: wcm.py:3692 wcm.py:3787
+msgid "Delete"
+msgstr "删除"
+
+#: wcm.py:3703
+msgid "Display"
+msgstr "显示器"
+
+#: wcm.py:3711
+#, fuzzy
+msgid "Outputs"
+msgstr "检测显示器"
+
+#: wcm.py:3718
+msgid "Close"
+msgstr "关闭"
+
+#: wcm.py:3758
+msgid "Use This Plugin"
+msgstr "使用此插件"
+
+#: wcm.py:3767
+msgid "PLUGIN PRESETS"
+msgstr ""
+
+#: wcm.py:3779
+msgid "Merge saved settings. Extra commands and settings are kept."
+msgstr ""
+
+#: wcm.py:3798
+msgid "Wiki"
+msgstr ""
+
+#: wcm.py:3803
+msgid "Open the Wayfire wiki for this plugin"
+msgstr ""
+
+#: wcm.py:3823
+msgid "DISPLAY"
+msgstr ""
+
+#: wcm.py:3837
+msgid ""
+"Set resolution, refresh rate, scale, position and rotation for each monitor, "
+"or turn outputs on and off. Changes are written to wayfire.ini. Connected "
+"displays refresh automatically; saved settings are kept when a monitor is "
+"unplugged."
+msgstr ""
+
+#: wcm.py:3847
+msgid "Detect Outputs"
+msgstr "检测显示器"
+
+#: wcm.py:3849
+msgid ""
+"Refresh connected displays and their available resolutions and refresh rates "
+"using wlr-randr. Saved displays remain listed when disconnected. Also "
+"updates which display is protected from being disabled, based on the display "
+"containing this window. This does not change display settings."
+msgstr ""
+
+#: wcm.py:3891
+#, fuzzy
+msgid "Close panel"
+msgstr "关闭"
+
+#: wcm.py:3936
+msgid "Back to plugin selection"
+msgstr ""
+
+#: wcm.py:4308
+msgid "Preset name:"
+msgstr "预设名称："
+
+#: wcm.py:4362
+msgid "Save Master Preset"
+msgstr "保存全局预设"
+
+#: wcm.py:4485
+#, fuzzy
+msgid "Cannot find program wdisplays."
+msgstr "找不到程序 wdisplays"
+
+#: wcm.py:4517
+#, fuzzy
+msgid "Wayfire config file"
+msgstr "要使用的 Wayfire 配置文件"
+
+#: wcm.py:4518
+msgid "Plugin to open"
+msgstr ""
+
+#: config_backend.py:756
+msgid "Invalid resolution — use WIDTHxHEIGHT, e.g. 1920x1080."
+msgstr ""
+
+#: config_backend.py:760
+msgid "Invalid refresh rate — enter a number of Hz, e.g. 60."
+msgstr ""
+
+#: config_backend.py:769
+#, python-brace-format
+msgid ""
+"{res} is not a mode this monitor reports; it may fail to apply. Pick a "
+"listed resolution."
+msgstr ""
+
+#: config_backend.py:775
+msgid ""
+"That refresh rate isn't advertised for this resolution; it may be ignored."
+msgstr ""
+
+#~ msgid ""
+#~ "Attempting to bind <tt><b>\"{key_str}\"</b></tt> without modifier. You "
+#~ "will be unable to use this key/button for anything else! Are you sure?"
+#~ msgstr ""
+#~ "正在尝试绑定无修饰符的<tt><b>\"{key_str}\"</b></tt>。您将无法将此键/按钮用"
+#~ "于其他任何用途！您确定吗？"
+
+#~ msgid "none"
+#~ msgstr "无"
+
+#~ msgid "Edit binding"
+#~ msgstr "编辑绑定"
+
+#~ msgid "Save binding"
+#~ msgstr "保存绑定"
+
+#~ msgid "Open context menu to choose layout"
+#~ msgstr "打开上下文菜单以选择布局"
+
+#~ msgid "Open context menu to choose model"
+#~ msgstr "打开上下文菜单以选择模型"
+
+#~ msgid "Open"
+#~ msgstr "打开"
+
+#~ msgid "Select Folder"
+#~ msgstr "选择文件夹"
+
+#~ msgid "Choose File"
+#~ msgstr "选择文件"
+
+#~ msgid "Run command"
+#~ msgstr "运行命令"
+
+#~ msgid "Remove from autostart list"
+#~ msgstr "从自启动列表中移除"
+
+#~ msgid "Command {name}"
+#~ msgstr "命令 {name}"
+
+#~ msgid "Workspace Index"
+#~ msgstr "工作区索引"
+
+#~ msgid "Add new command"
+#~ msgstr "添加新命令"
+
+#~ msgid "Go To Workspace"
+#~ msgstr "转到工作区"
+
+#~ msgid "Go To Workspace With Window"
+#~ msgstr "将窗口移至工作区"
+
+#~ msgid "Send Window To Workspace"
+#~ msgstr "发送窗口至工作区"
+
+#~ msgid "wf-shell config file to use"
+#~ msgstr "要使用的 wf-shell 配置文件"
+
+#~ msgid "plugin to open at launch, or none for default"
+#~ msgstr "启动时打开的插件，或无（默认）"
+
+#~ msgid "To use input binding capture, enable shortcuts-inhibit plugin."
+#~ msgstr "要使用输入绑定捕获，请启用 shortcuts-inhibit 插件。"
+
+#~ msgid "(none)"
+#~ msgstr "（无）"
+
+#~ msgid "Command:"
+#~ msgstr "命令："
+
+#~ msgid "Workspace"
+#~ msgstr "工作区"
+
+#~ msgid "Configure Outputs"
+#~ msgstr "配置输出"

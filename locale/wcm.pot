@@ -1,0 +1,501 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) YEAR THE PACKAGE'S COPYRIGHT HOLDER
+# This file is distributed under the same license as the wcm package.
+# FIRST AUTHOR <EMAIL@ADDRESS>, YEAR.
+#
+#, fuzzy
+msgid ""
+msgstr ""
+"Project-Id-Version: wcm\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-10-04 15:15+0100\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language-Team: LANGUAGE <LL@li.org>\n"
+"Language: \n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+
+#: wcm.py:618
+msgid "Waiting for Binding"
+msgstr ""
+
+#: wcm.py:632
+msgid ""
+"Press a key combination…\n"
+"(Escape to cancel)"
+msgstr ""
+
+#: wcm.py:686
+msgid "(No modifiers)"
+msgstr ""
+
+#: wcm.py:697
+msgid "Press a key combination…"
+msgstr ""
+
+#: wcm.py:842 wcm.py:1412 wcm.py:1433
+msgid "General"
+msgstr ""
+
+#: wcm.py:842
+msgid "Accessibility"
+msgstr ""
+
+#: wcm.py:842
+msgid "Desktop"
+msgstr ""
+
+#: wcm.py:842
+msgid "Shell"
+msgstr ""
+
+#: wcm.py:843
+msgid "Effects"
+msgstr ""
+
+#: wcm.py:843
+msgid "Window Management"
+msgstr ""
+
+#: wcm.py:843
+msgid "Utility"
+msgstr ""
+
+#: wcm.py:843
+msgid "Other"
+msgstr ""
+
+#: wcm.py:844
+msgid "Uncategorized"
+msgstr ""
+
+#: wcm.py:916
+msgid "Preset operation failed"
+msgstr ""
+
+#: wcm.py:944
+msgid ""
+"Window matching examples:\n"
+"all — every window; none — no windows\n"
+"type is \"toplevel\" — normal application windows\n"
+"app_id is \"foot\" — match an application\n"
+"title contains \"Terminal\" — match a window title\n"
+"Combine conditions with &, | and !, using parentheses."
+msgstr ""
+
+#: wcm.py:1032
+msgid "Reset to default"
+msgstr ""
+
+#: wcm.py:1216
+#, python-brace-format
+msgid "Reset to default: {default}"
+msgstr ""
+
+#: wcm.py:1220
+msgid "Already at default"
+msgstr ""
+
+#: wcm.py:1285
+msgid "Select Directory"
+msgstr ""
+
+#: wcm.py:1294
+msgid "Select File"
+msgstr ""
+
+#: wcm.py:1352
+msgid "Options"
+msgstr ""
+
+#: wcm.py:1428
+msgid "Rules"
+msgstr ""
+
+#: wcm.py:1437
+msgid ""
+"This page has no editable options. See the plugin documentation for usage."
+msgstr ""
+
+#: wcm.py:1441
+msgid "Plugin documentation"
+msgstr ""
+
+#: wcm.py:1653 wcm.py:1716
+#, python-brace-format
+msgid "Command {name}: {command}"
+msgstr ""
+
+#: wcm.py:1671
+msgid "Type"
+msgstr ""
+
+#: wcm.py:1677
+msgid "Regular"
+msgstr ""
+
+#: wcm.py:1678
+msgid "Repeat"
+msgstr ""
+
+#: wcm.py:1679
+msgid "Always"
+msgstr ""
+
+#: wcm.py:1680
+msgid "Release"
+msgstr ""
+
+#: wcm.py:1687
+msgid "Binding"
+msgstr ""
+
+#: wcm.py:1705
+msgid "Command"
+msgstr ""
+
+#: wcm.py:1787
+msgid "Choose Executable"
+msgstr ""
+
+#: wcm.py:1906
+msgid "CORE"
+msgstr ""
+
+#: wcm.py:1911
+msgid "SHELL"
+msgstr ""
+
+#: wcm.py:1916
+msgid "ON"
+msgstr ""
+
+#: wcm.py:1921
+msgid "OFF"
+msgstr ""
+
+#: wcm.py:2101
+msgid "auto"
+msgstr ""
+
+#: wcm.py:2130 wcm.py:2149
+msgid "Confirm Display Changes"
+msgstr ""
+
+#: wcm.py:2157 wcm.py:2187
+msgid "Revert"
+msgstr ""
+
+#: wcm.py:2189
+msgid "Keep Changes"
+msgstr ""
+
+#: wcm.py:2439
+msgid "main display (running WCM)"
+msgstr ""
+
+#: wcm.py:2448
+msgid "Enabled"
+msgstr ""
+
+#: wcm.py:2460
+msgid ""
+"WCM is running on this display, so it can't be removed — that would blank "
+"your screen. Move WCM to another display to manage this one."
+msgstr ""
+
+#: wcm.py:2464
+msgid "Remove this output (delete its config section)"
+msgstr ""
+
+#: wcm.py:2492
+msgid "Automatic"
+msgstr ""
+
+#: wcm.py:2598
+#, python-brace-format
+msgid "{name}: Mode → {mode}"
+msgstr ""
+
+#: wcm.py:2601
+#, python-brace-format
+msgid "{name}: Rotation → {rotation}"
+msgstr ""
+
+#: wcm.py:2788
+msgid "Resolution"
+msgstr ""
+
+#: wcm.py:2789
+msgid "Refresh rate"
+msgstr ""
+
+#: wcm.py:2790
+msgid "Scale"
+msgstr ""
+
+#: wcm.py:2796
+msgid "Position"
+msgstr ""
+
+#: wcm.py:2797
+msgid "Rotation"
+msgstr ""
+
+#: wcm.py:2813
+msgid ""
+"WCM is running on this display, so it can't be switched off — that would "
+"blank your screen. Move WCM to another display to turn this one off."
+msgstr ""
+
+#: wcm.py:2837
+#, python-brace-format
+msgid "Remove output “{name}”?"
+msgstr ""
+
+#: wcm.py:2839
+#, python-brace-format
+msgid ""
+"This deletes its [output:{name}] section from wayfire.ini. If the monitor is "
+"still connected it will reappear unconfigured."
+msgstr ""
+
+#: wcm.py:2842 wcm.py:4318
+msgid "Cancel"
+msgstr ""
+
+#: wcm.py:2842
+msgid "Remove"
+msgstr ""
+
+#: wcm.py:2861
+msgid "Add output"
+msgstr ""
+
+#: wcm.py:2867
+msgid "name from wlr-randr, e.g. HDMI-A-1"
+msgstr ""
+
+#: wcm.py:2948
+msgid "LIVE"
+msgstr ""
+
+#: wcm.py:3164
+msgid "Close Help"
+msgstr ""
+
+#: wcm.py:3166
+msgid "Back to the WCM"
+msgstr ""
+
+#: wcm.py:3173 wcm.py:3806 wcm.py:3862
+msgid "Back"
+msgstr ""
+
+#: wcm.py:3179
+msgid "Forward"
+msgstr ""
+
+#: wcm.py:3186 wcm.py:3319
+msgid "Wayfire Wiki"
+msgstr ""
+
+#: wcm.py:3195
+msgid "Reload"
+msgstr ""
+
+#: wcm.py:3201
+msgid "Open in external browser"
+msgstr ""
+
+#: wcm.py:3238
+msgid ""
+"<b>In-app wiki needs WebKitGTK</b>\n"
+"\n"
+"Install the GTK4 build (e.g. <tt>webkit2gtk-6.0</tt> / <tt>webkitgtk-6.0</"
+"tt>) to read wiki pages right here. For now you can open the page in your "
+"browser."
+msgstr ""
+
+#: wcm.py:3249 wcm.py:3292
+msgid "Open in browser"
+msgstr ""
+
+#: wcm.py:3275
+msgid "<b>This page couldn't be loaded in-app</b>"
+msgstr ""
+
+#: wcm.py:3282
+msgid ""
+"WebKit couldn't render the page (this is usually a WebKitGTK or Wayland "
+"issue, not the wiki). You can open it in your browser."
+msgstr ""
+
+#: wcm.py:3288
+msgid "Retry"
+msgstr ""
+
+#: wcm.py:3305
+msgid ""
+"WebKit couldn't render the page (usually a WebKitGTK or Wayland issue, not "
+"the wiki)."
+msgstr ""
+
+#: wcm.py:3414
+msgid "Couldn't load page"
+msgstr ""
+
+#: wcm.py:3428
+msgid "Couldn't render the page"
+msgstr ""
+
+#: wcm.py:3429
+msgid "The WebKit process stopped unexpectedly."
+msgstr ""
+
+#: wcm.py:3435 wcm.py:4516
+msgid "Wayfire Config Manager"
+msgstr ""
+
+#: wcm.py:3489
+#, python-brace-format
+msgid "Configuration for {section}"
+msgstr ""
+
+#: wcm.py:3535 wcm.py:4084
+msgid "Hide side panel"
+msgstr ""
+
+#: wcm.py:3535 wcm.py:4084
+msgid "Show side panel"
+msgstr ""
+
+#: wcm.py:3655
+msgid "Filter"
+msgstr ""
+
+#: wcm.py:3662
+msgid "Search plugins…"
+msgstr ""
+
+#: wcm.py:3672
+msgid "PRESETS"
+msgstr ""
+
+#: wcm.py:3684 wcm.py:3778
+msgid "Load"
+msgstr ""
+
+#: wcm.py:3688 wcm.py:3783 wcm.py:4316
+msgid "Save"
+msgstr ""
+
+#: wcm.py:3692 wcm.py:3787
+msgid "Delete"
+msgstr ""
+
+#: wcm.py:3703
+msgid "Display"
+msgstr ""
+
+#: wcm.py:3711
+msgid "Outputs"
+msgstr ""
+
+#: wcm.py:3718
+msgid "Close"
+msgstr ""
+
+#: wcm.py:3758
+msgid "Use This Plugin"
+msgstr ""
+
+#: wcm.py:3767
+msgid "PLUGIN PRESETS"
+msgstr ""
+
+#: wcm.py:3779
+msgid "Merge saved settings. Extra commands and settings are kept."
+msgstr ""
+
+#: wcm.py:3798
+msgid "Wiki"
+msgstr ""
+
+#: wcm.py:3803
+msgid "Open the Wayfire wiki for this plugin"
+msgstr ""
+
+#: wcm.py:3823
+msgid "DISPLAY"
+msgstr ""
+
+#: wcm.py:3837
+msgid ""
+"Set resolution, refresh rate, scale, position and rotation for each monitor, "
+"or turn outputs on and off. Changes are written to wayfire.ini. Connected "
+"displays refresh automatically; saved settings are kept when a monitor is "
+"unplugged."
+msgstr ""
+
+#: wcm.py:3847
+msgid "Detect Outputs"
+msgstr ""
+
+#: wcm.py:3849
+msgid ""
+"Refresh connected displays and their available resolutions and refresh rates "
+"using wlr-randr. Saved displays remain listed when disconnected. Also "
+"updates which display is protected from being disabled, based on the display "
+"containing this window. This does not change display settings."
+msgstr ""
+
+#: wcm.py:3891
+msgid "Close panel"
+msgstr ""
+
+#: wcm.py:3936
+msgid "Back to plugin selection"
+msgstr ""
+
+#: wcm.py:4308
+msgid "Preset name:"
+msgstr ""
+
+#: wcm.py:4362
+msgid "Save Master Preset"
+msgstr ""
+
+#: wcm.py:4485
+msgid "Cannot find program wdisplays."
+msgstr ""
+
+#: wcm.py:4517
+msgid "Wayfire config file"
+msgstr ""
+
+#: wcm.py:4518
+msgid "Plugin to open"
+msgstr ""
+
+#: config_backend.py:756
+msgid "Invalid resolution — use WIDTHxHEIGHT, e.g. 1920x1080."
+msgstr ""
+
+#: config_backend.py:760
+msgid "Invalid refresh rate — enter a number of Hz, e.g. 60."
+msgstr ""
+
+#: config_backend.py:769
+#, python-brace-format
+msgid ""
+"{res} is not a mode this monitor reports; it may fail to apply. Pick a "
+"listed resolution."
+msgstr ""
+
+#: config_backend.py:775
+msgid ""
+"That refresh rate isn't advertised for this resolution; it may be ignored."
+msgstr ""

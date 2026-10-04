@@ -173,6 +173,9 @@ def _parse_option(opt_node, plugin_name):
             opt.disp_name = _tr(plugin_name, _text(child))
         elif tag == '_long':
             opt.tooltip = _tr(plugin_name, _text(child))
+            # Inspect the source text so matcher help also works in translations.
+            if opt.type == OptionType.STRING and 'criteria' in _text(child).lower():
+                opt.hints.append('criteria')
         elif tag == 'default':
             dtext = _text(child)
             if dtext:
@@ -515,10 +518,17 @@ def load_all_metadata():
         print("WCM: Plugins will be generated from config file.")
         print("WCM: Set WAYFIRE_PLUGIN_XML_PATH to your metadata dir.")
 
-    for d in wf_dirs:
-        plugins.extend(load_metadata_from_dir(d))
-    for d in ws_dirs:
-        plugins.extend(load_metadata_from_dir(d))
+    # Search paths are ordered by priority (including the user's override).
+    # Multiple installs or symlinked paths may describe the same plugin.
+    # Keep the first complete definition, rather than duplicate cards or mix
+    # options from different installed versions. wf-shell is a separate domain.
+    seen = set()
+    for d in wf_dirs + ws_dirs:
+        for plugin in load_metadata_from_dir(d):
+            identity = (plugin.type, plugin.name)
+            if identity not in seen:
+                seen.add(identity)
+                plugins.append(plugin)
 
     if plugins:
         cats = {}

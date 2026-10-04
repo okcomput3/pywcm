@@ -176,3 +176,53 @@ Works with any install prefix (`/usr`, `/usr/local`, `/opt/wayfire`, etc).
 ## License
 
 MIT — same as the original WCM.
+
+## Regression checks
+
+Run `python3 test_regressions.py` in a session with GTK4 available. The suite
+uses temporary configurations, exercises real GTK controls, and includes 2,000
+seeded config operations. It does not change your Wayfire or monitor settings.
+The existing `test_*.py` files can also be run together with pytest.
+
+The command editor supports Regular, Repeat, Always, and Release bindings,
+including existing bindings whose command entry is missing. Config saves retain
+untouched formatting and merge local edits into externally updated files;
+Plugin enable/disable actions are replayed on the latest list so independent
+plugin toggles merge. Explicit replacement of the same option still uses the
+local value.
+Pending text edits are flushed on normal window close and cancelled when a
+plugin preset replaces them. Display refresh waits for pending confirmation;
+closing WCM reverts unconfirmed display changes.
+
+The Spanish, Romanian and Simplified Chinese catalogs include upstream WCM
+translations and additional Python UI controls. Untranslated messages fall
+back to English. Group/subgroup `hidden` attributes are not interpreted by
+upstream WCM; only option-level hiding is supported here as well.
+
+Config writes use a temporary file and replace the destination only after the
+write succeeds, preserving config symlinks and file permissions. Select
+**Automatic** in the display resolution menu to restore the default mode;
+clearing the field and pressing Enter or leaving the field does the same.
+
+Master preset save/load stages all destination files before replacing them.
+If a later replacement fails, earlier replacements are rolled back. If recovery
+itself fails, the error identifies retained recovery copies. This handles
+reported I/O failures; it is not a cross-file guarantee against sudden power loss.
+Plugin preset loads keep pending edits and the previous in-memory config on
+failure. Plugin presets merge stored options; extra commands and settings stay.
+Names that normalize to an existing preset are rejected unless the existing
+normalized name is entered explicitly. Preset errors are shown in the app.
+
+Config saves recheck the destination after staging and refuse a detected
+concurrent change so the operation can be retried. A hard-linked recovery copy
+protects the reproduced last-moment in-place write race; when detected, the
+error identifies the retained external contents. This is not a universal lock
+against arbitrary external editors (particularly concurrent atomic replacement).
+Where hard links are unavailable, saves use a copied recovery snapshot and an
+additional pre-replacement check; this fallback cannot capture an in-place edit
+made after that check. Save errors keep the main window open and pending edits
+available for retry. Failed display reverts retain their original baseline and
+retry callback; an open confirmation dialog retries on its countdown and can
+still be reverted manually, including through the window manager's close action.
+Failed text flushes remain pending for retry. Master-preset deletion uses the
+same staged backup/rollback mechanism as preset replacement.

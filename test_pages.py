@@ -41,7 +41,7 @@ def test_rules_keep_arbitrary_names_and_avoid_collisions():
 
 
 def test_hotplug_preserves_confirmation_and_coalesces_events():
-    page = SimpleNamespace(_hotplug_source=0, _refresh_outputs=Mock())
+    page = SimpleNamespace(_hotplug_source=0, _refresh_outputs=Mock(), _pending_reverts={})
     with patch('wcm.GLib.timeout_add', return_value=123) as timer:
         DisplayPage._outputs_changed(page)
         DisplayPage._outputs_changed(page)
@@ -65,7 +65,7 @@ def test_hotplug_keeps_disconnected_config():
     cfg.set_option('output:HDMI-A-1', 'mode', '1920x1080@60000')
     root = Mock()
     root.get_first_child.return_value = None
-    page = SimpleNamespace(_active_confirm=None, _confirm_sources=set(),
+    page = SimpleNamespace(_active_confirm=None, _confirm_sources=set(), _pending_reverts={},
                            _root=root, app=SimpleNamespace(config=cfg),
                            _om=Mock(), _window_output_name=lambda: None,
                            _build_card=Mock(), _build_add_row=Mock())

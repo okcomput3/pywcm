@@ -1,0 +1,581 @@
+#, fuzzy
+msgid ""
+msgstr ""
+"Project-Id-Version: PACKAGE VERSION\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-10-04 15:15+0100\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator:\n"
+"Language-Team:\n"
+"Language: es_ES\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+
+#: wcm.py:618
+msgid "Waiting for Binding"
+msgstr "Esperando asignación"
+
+#: wcm.py:632
+msgid ""
+"Press a key combination…\n"
+"(Escape to cancel)"
+msgstr ""
+
+#: wcm.py:686
+#, fuzzy
+msgid "(No modifiers)"
+msgstr "(No hay modificadores pulsados)"
+
+#: wcm.py:697
+msgid "Press a key combination…"
+msgstr ""
+
+#: wcm.py:842 wcm.py:1412 wcm.py:1433
+msgid "General"
+msgstr "General"
+
+#: wcm.py:842
+msgid "Accessibility"
+msgstr "Accesibilidad"
+
+#: wcm.py:842
+msgid "Desktop"
+msgstr "Escritorio"
+
+#: wcm.py:842
+msgid "Shell"
+msgstr "Shell"
+
+#: wcm.py:843
+msgid "Effects"
+msgstr "Efectos"
+
+#: wcm.py:843
+msgid "Window Management"
+msgstr "Gestión de ventanas"
+
+#: wcm.py:843
+msgid "Utility"
+msgstr "Utilidad"
+
+#: wcm.py:843
+msgid "Other"
+msgstr "Otro"
+
+#: wcm.py:844
+msgid "Uncategorized"
+msgstr "Sin categorizar"
+
+#: wcm.py:916
+msgid "Preset operation failed"
+msgstr ""
+
+#: wcm.py:944
+msgid ""
+"Window matching examples:\n"
+"all — every window; none — no windows\n"
+"type is \"toplevel\" — normal application windows\n"
+"app_id is \"foot\" — match an application\n"
+"title contains \"Terminal\" — match a window title\n"
+"Combine conditions with &, | and !, using parentheses."
+msgstr ""
+
+#: wcm.py:1032
+msgid "Reset to default"
+msgstr "Restablecer a valores predeterminados"
+
+#: wcm.py:1216
+#, python-brace-format
+msgid "Reset to default: {default}"
+msgstr "Restablecer el valor predeterminado: {default}"
+
+#: wcm.py:1220
+msgid "Already at default"
+msgstr "Ya tiene el valor predeterminado"
+
+#: wcm.py:1285
+#, fuzzy
+msgid "Select Directory"
+msgstr "Seleccionar directorio"
+
+#: wcm.py:1294
+msgid "Select File"
+msgstr "Seleccionar archivo"
+
+#: wcm.py:1352
+msgid "Options"
+msgstr ""
+
+#: wcm.py:1428
+msgid "Rules"
+msgstr ""
+
+#: wcm.py:1437
+msgid ""
+"This page has no editable options. See the plugin documentation for usage."
+msgstr ""
+
+#: wcm.py:1441
+msgid "Plugin documentation"
+msgstr "Documentación del complemento"
+
+#: wcm.py:1653 wcm.py:1716
+#, python-brace-format
+msgid "Command {name}: {command}"
+msgstr "Comando {name}: {command}"
+
+#: wcm.py:1671
+msgid "Type"
+msgstr "Tipo"
+
+#: wcm.py:1677
+msgid "Regular"
+msgstr "Normal"
+
+#: wcm.py:1678
+msgid "Repeat"
+msgstr "Repetir"
+
+#: wcm.py:1679
+msgid "Always"
+msgstr "Siempre"
+
+#: wcm.py:1680
+msgid "Release"
+msgstr "Al soltar"
+
+#: wcm.py:1687
+msgid "Binding"
+msgstr "Asignación"
+
+#: wcm.py:1705
+msgid "Command"
+msgstr "Comando"
+
+#: wcm.py:1787
+msgid "Choose Executable"
+msgstr "Seleccionar ejecutable"
+
+#: wcm.py:1906
+msgid "CORE"
+msgstr ""
+
+#: wcm.py:1911
+msgid "SHELL"
+msgstr ""
+
+#: wcm.py:1916
+msgid "ON"
+msgstr ""
+
+#: wcm.py:1921
+msgid "OFF"
+msgstr ""
+
+#: wcm.py:2101
+msgid "auto"
+msgstr ""
+
+#: wcm.py:2130 wcm.py:2149
+msgid "Confirm Display Changes"
+msgstr "Confirmar cambios de pantalla"
+
+#: wcm.py:2157 wcm.py:2187
+msgid "Revert"
+msgstr "Revertir"
+
+#: wcm.py:2189
+msgid "Keep Changes"
+msgstr "Conservar cambios"
+
+#: wcm.py:2439
+msgid "main display (running WCM)"
+msgstr ""
+
+#: wcm.py:2448
+msgid "Enabled"
+msgstr "Activado"
+
+#: wcm.py:2460
+msgid ""
+"WCM is running on this display, so it can't be removed — that would blank "
+"your screen. Move WCM to another display to manage this one."
+msgstr ""
+
+#: wcm.py:2464
+msgid "Remove this output (delete its config section)"
+msgstr ""
+
+#: wcm.py:2492
+msgid "Automatic"
+msgstr "Automático"
+
+#: wcm.py:2598
+#, python-brace-format
+msgid "{name}: Mode → {mode}"
+msgstr ""
+
+#: wcm.py:2601
+#, python-brace-format
+msgid "{name}: Rotation → {rotation}"
+msgstr ""
+
+#: wcm.py:2788
+msgid "Resolution"
+msgstr "Resolución"
+
+#: wcm.py:2789
+msgid "Refresh rate"
+msgstr "Frecuencia de actualización"
+
+#: wcm.py:2790
+msgid "Scale"
+msgstr "Escala"
+
+#: wcm.py:2796
+msgid "Position"
+msgstr "Posición"
+
+#: wcm.py:2797
+msgid "Rotation"
+msgstr "Rotación"
+
+#: wcm.py:2813
+msgid ""
+"WCM is running on this display, so it can't be switched off — that would "
+"blank your screen. Move WCM to another display to turn this one off."
+msgstr ""
+
+#: wcm.py:2837
+#, python-brace-format
+msgid "Remove output “{name}”?"
+msgstr ""
+
+#: wcm.py:2839
+#, python-brace-format
+msgid ""
+"This deletes its [output:{name}] section from wayfire.ini. If the monitor is "
+"still connected it will reappear unconfigured."
+msgstr ""
+
+#: wcm.py:2842 wcm.py:4318
+msgid "Cancel"
+msgstr "Cancelar"
+
+#: wcm.py:2842
+msgid "Remove"
+msgstr ""
+
+#: wcm.py:2861
+msgid "Add output"
+msgstr ""
+
+#: wcm.py:2867
+msgid "name from wlr-randr, e.g. HDMI-A-1"
+msgstr ""
+
+#: wcm.py:2948
+msgid "LIVE"
+msgstr ""
+
+#: wcm.py:3164
+#, fuzzy
+msgid "Close Help"
+msgstr "Cerrar"
+
+#: wcm.py:3166
+msgid "Back to the WCM"
+msgstr ""
+
+#: wcm.py:3173 wcm.py:3806 wcm.py:3862
+msgid "Back"
+msgstr "Atrás"
+
+#: wcm.py:3179
+msgid "Forward"
+msgstr ""
+
+#: wcm.py:3186 wcm.py:3319
+msgid "Wayfire Wiki"
+msgstr ""
+
+#: wcm.py:3195
+msgid "Reload"
+msgstr ""
+
+#: wcm.py:3201
+msgid "Open in external browser"
+msgstr ""
+
+#: wcm.py:3238
+msgid ""
+"<b>In-app wiki needs WebKitGTK</b>\n"
+"\n"
+"Install the GTK4 build (e.g. <tt>webkit2gtk-6.0</tt> / <tt>webkitgtk-6.0</"
+"tt>) to read wiki pages right here. For now you can open the page in your "
+"browser."
+msgstr ""
+
+#: wcm.py:3249 wcm.py:3292
+msgid "Open in browser"
+msgstr ""
+
+#: wcm.py:3275
+msgid "<b>This page couldn't be loaded in-app</b>"
+msgstr ""
+
+#: wcm.py:3282
+msgid ""
+"WebKit couldn't render the page (this is usually a WebKitGTK or Wayland "
+"issue, not the wiki). You can open it in your browser."
+msgstr ""
+
+#: wcm.py:3288
+msgid "Retry"
+msgstr ""
+
+#: wcm.py:3305
+msgid ""
+"WebKit couldn't render the page (usually a WebKitGTK or Wayland issue, not "
+"the wiki)."
+msgstr ""
+
+#: wcm.py:3414
+msgid "Couldn't load page"
+msgstr ""
+
+#: wcm.py:3428
+msgid "Couldn't render the page"
+msgstr ""
+
+#: wcm.py:3429
+msgid "The WebKit process stopped unexpectedly."
+msgstr ""
+
+#: wcm.py:3435 wcm.py:4516
+msgid "Wayfire Config Manager"
+msgstr "Gestor de configuración de Wayfire"
+
+#: wcm.py:3489
+#, python-brace-format
+msgid "Configuration for {section}"
+msgstr ""
+
+#: wcm.py:3535 wcm.py:4084
+msgid "Hide side panel"
+msgstr ""
+
+#: wcm.py:3535 wcm.py:4084
+msgid "Show side panel"
+msgstr ""
+
+#: wcm.py:3655
+msgid "Filter"
+msgstr "Filtro"
+
+#: wcm.py:3662
+msgid "Search plugins…"
+msgstr ""
+
+#: wcm.py:3672
+msgid "PRESETS"
+msgstr ""
+
+#: wcm.py:3684 wcm.py:3778
+msgid "Load"
+msgstr "Cargar"
+
+#: wcm.py:3688 wcm.py:3783 wcm.py:4316
+msgid "Save"
+msgstr "Guardar"
+
+#: wcm.py:3692 wcm.py:3787
+msgid "Delete"
+msgstr "Eliminar"
+
+#: wcm.py:3703
+msgid "Display"
+msgstr "Pantalla"
+
+#: wcm.py:3711
+#, fuzzy
+msgid "Outputs"
+msgstr "Detectar pantallas"
+
+#: wcm.py:3718
+msgid "Close"
+msgstr "Cerrar"
+
+#: wcm.py:3758
+msgid "Use This Plugin"
+msgstr "Usar este complemento"
+
+#: wcm.py:3767
+msgid "PLUGIN PRESETS"
+msgstr ""
+
+#: wcm.py:3779
+msgid "Merge saved settings. Extra commands and settings are kept."
+msgstr ""
+
+#: wcm.py:3798
+msgid "Wiki"
+msgstr ""
+
+#: wcm.py:3803
+msgid "Open the Wayfire wiki for this plugin"
+msgstr ""
+
+#: wcm.py:3823
+msgid "DISPLAY"
+msgstr ""
+
+#: wcm.py:3837
+msgid ""
+"Set resolution, refresh rate, scale, position and rotation for each monitor, "
+"or turn outputs on and off. Changes are written to wayfire.ini. Connected "
+"displays refresh automatically; saved settings are kept when a monitor is "
+"unplugged."
+msgstr ""
+
+#: wcm.py:3847
+msgid "Detect Outputs"
+msgstr "Detectar pantallas"
+
+#: wcm.py:3849
+msgid ""
+"Refresh connected displays and their available resolutions and refresh rates "
+"using wlr-randr. Saved displays remain listed when disconnected. Also "
+"updates which display is protected from being disabled, based on the display "
+"containing this window. This does not change display settings."
+msgstr ""
+
+#: wcm.py:3891
+#, fuzzy
+msgid "Close panel"
+msgstr "Cerrar"
+
+#: wcm.py:3936
+msgid "Back to plugin selection"
+msgstr ""
+
+#: wcm.py:4308
+msgid "Preset name:"
+msgstr "Nombre del preajuste:"
+
+#: wcm.py:4362
+msgid "Save Master Preset"
+msgstr "Guardar preajuste global"
+
+#: wcm.py:4485
+#, fuzzy
+msgid "Cannot find program wdisplays."
+msgstr "No se encuentra el programa <tt>wdisplays</tt>"
+
+#: wcm.py:4517
+#, fuzzy
+msgid "Wayfire config file"
+msgstr "Archivo de configuración de Wayfire a usar"
+
+#: wcm.py:4518
+msgid "Plugin to open"
+msgstr ""
+
+#: config_backend.py:756
+msgid "Invalid resolution — use WIDTHxHEIGHT, e.g. 1920x1080."
+msgstr ""
+
+#: config_backend.py:760
+msgid "Invalid refresh rate — enter a number of Hz, e.g. 60."
+msgstr ""
+
+#: config_backend.py:769
+#, python-brace-format
+msgid ""
+"{res} is not a mode this monitor reports; it may fail to apply. Pick a "
+"listed resolution."
+msgstr ""
+
+#: config_backend.py:775
+msgid ""
+"That refresh rate isn't advertised for this resolution; it may be ignored."
+msgstr ""
+
+#~ msgid ""
+#~ "Attempting to bind <tt><b>\"{key_str}\"</b></tt> without modifier. You "
+#~ "will be unable to use this key/button for anything else! Are you sure?"
+#~ msgstr ""
+#~ "Intentando asignar <tt><b>\"{key_str}\"</b></tt> sin modificador. ¡No "
+#~ "podrá usar esta tecla o botón para nada más! ¿Está seguro?"
+
+#~ msgid "none"
+#~ msgstr "ninguno"
+
+#~ msgid "Edit binding"
+#~ msgstr "Editar asignación"
+
+#~ msgid "Save binding"
+#~ msgstr "Guardar asignación"
+
+#~ msgid "Open context menu to choose layout"
+#~ msgstr "Abrir menú contextual para elegir la disposición"
+
+#~ msgid "Open context menu to choose model"
+#~ msgstr "Abrir menú contextual para elegir el modelo"
+
+#~ msgid "Open"
+#~ msgstr "Abrir"
+
+#~ msgid "Select Folder"
+#~ msgstr "Seleccionar carpeta"
+
+#~ msgid "Choose File"
+#~ msgstr "Seleccionar archivo"
+
+#~ msgid "Run command"
+#~ msgstr "Ejecutar comando"
+
+#~ msgid "Remove from autostart list"
+#~ msgstr "Eliminar de la lista de inicio automático"
+
+#~ msgid "Command {name}"
+#~ msgstr "Comando {name}"
+
+#~ msgid "Workspace Index"
+#~ msgstr "Índice de espacio de trabajo"
+
+#~ msgid "Add new command"
+#~ msgstr "Añadir nuevo comando"
+
+#~ msgid "Go To Workspace"
+#~ msgstr "Ir al espacio de trabajo"
+
+#~ msgid "Go To Workspace With Window"
+#~ msgstr "Ir al espacio de trabajo con ventana"
+
+#~ msgid "Send Window To Workspace"
+#~ msgstr "Enviar ventana al espacio de trabajo"
+
+#~ msgid "wf-shell config file to use"
+#~ msgstr "Archivo de configuración de wf-shell a usar"
+
+#~ msgid "plugin to open at launch, or none for default"
+#~ msgstr "complemento a abrir al iniciar, o ninguno por defecto"
+
+#~ msgid "To use input binding capture, enable shortcuts-inhibit plugin."
+#~ msgstr ""
+#~ "Para usar la captura de asignación de entradas, active el complemento "
+#~ "shortcuts-inhibit."
+
+#~ msgid "(none)"
+#~ msgstr "(ninguno)"
+
+#~ msgid "Command:"
+#~ msgstr "Comando:"
+
+#~ msgid "Workspace"
+#~ msgstr "Espacio de trabajo"
+
+#~ msgid "Configure Outputs"
+#~ msgstr "Configurar salidas"
